@@ -66,6 +66,13 @@ data class ToolCall(
     val succeeded: Boolean? = null,
 )
 
+sealed interface RealtimeUpdate {
+    data object Connected : RealtimeUpdate
+    data object Reconnecting : RealtimeUpdate
+    data class Event(val event: ConsoleEvent) : RealtimeUpdate
+    data class AgentStatus(val label: String, val state: TaskState? = null) : RealtimeUpdate
+}
+
 /** A task the user is composing or has just submitted. */
 data class TaskSubmission(
     val prompt: String,

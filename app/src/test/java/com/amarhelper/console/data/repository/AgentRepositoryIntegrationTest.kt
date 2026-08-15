@@ -7,6 +7,7 @@ import com.amarhelper.console.data.config.ConfigStore
 import com.amarhelper.console.data.config.ServiceId
 import com.amarhelper.console.data.net.ApiClientFactory
 import com.amarhelper.console.data.remote.opencode.OpenCodeEventStream
+import com.amarhelper.console.data.remote.openhands.OpenHandsRealtimeClient
 import com.amarhelper.console.data.security.SecureCredentialStore
 import com.amarhelper.console.domain.model.AgentProvider
 import com.amarhelper.console.domain.model.ConsoleEvent
@@ -54,7 +55,12 @@ class AgentRepositoryIntegrationTest {
         configStore.clear()
         val credentials = SecureCredentialStore(context)
         val factory = ApiClientFactory(credentials, json)
-        repository = DefaultAgentRepository(configStore, factory, OpenCodeEventStream(credentials, json))
+        repository = DefaultAgentRepository(
+            configStore,
+            factory,
+            OpenCodeEventStream(credentials, json),
+            OpenHandsRealtimeClient(json, credentials),
+        )
     }
 
     @After

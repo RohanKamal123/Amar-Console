@@ -7,6 +7,7 @@ import com.amarhelper.console.data.config.ConfigStore
 import com.amarhelper.console.domain.model.AgentProvider
 import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.TaskState
+import com.amarhelper.console.domain.model.RealtimeUpdate
 import com.amarhelper.console.fake.FakeAgentRepository
 import com.amarhelper.console.ui.console.ConnectionState
 import com.amarhelper.console.ui.console.SessionConsoleViewModel
@@ -61,8 +62,8 @@ class SessionConsoleViewModelTest {
         vm.start(AgentProvider.OPEN_CODE, "ses_1")
         advanceUntilIdle()
 
-        agents.liveEvents.emit(ConsoleEvent("e1", ConsoleEvent.Kind.AGENT, "Working on it", 10L))
-        agents.liveEvents.emit(ConsoleEvent("e2", ConsoleEvent.Kind.TOOL, "bash()", 11L))
+        agents.liveEvents.emit(RealtimeUpdate.Event(ConsoleEvent("e1", ConsoleEvent.Kind.AGENT, "Working on it", 10L)))
+        agents.liveEvents.emit(RealtimeUpdate.Event(ConsoleEvent("e2", ConsoleEvent.Kind.TOOL, "bash()", 11L)))
         advanceUntilIdle()
 
         assertEquals(ConnectionState.LIVE, vm.state.value.connection)
@@ -76,7 +77,7 @@ class SessionConsoleViewModelTest {
         advanceUntilIdle()
 
         repeat(1_600) { index ->
-            agents.liveEvents.emit(ConsoleEvent("e$index", ConsoleEvent.Kind.AGENT, "line $index", index.toLong()))
+            agents.liveEvents.emit(RealtimeUpdate.Event(ConsoleEvent("e$index", ConsoleEvent.Kind.AGENT, "line $index", index.toLong())))
         }
         advanceUntilIdle()
 
@@ -98,7 +99,7 @@ class SessionConsoleViewModelTest {
         agents.streamFailure = null
         vm.reconnect()
         advanceUntilIdle()
-        agents.liveEvents.emit(ConsoleEvent("e1", ConsoleEvent.Kind.AGENT, "back", 1L))
+        agents.liveEvents.emit(RealtimeUpdate.Event(ConsoleEvent("e1", ConsoleEvent.Kind.AGENT, "back", 1L)))
         advanceUntilIdle()
 
         assertEquals(ConnectionState.LIVE, vm.state.value.connection)
@@ -148,5 +149,33 @@ class SessionConsoleViewModelTest {
         advanceUntilIdle()
 
         assertTrue(vm.state.value.notice!!.contains("Cancelling a running"))
+    }
+
+    @Test
+    fun `agent state updates change the indicator without adding transcript spam`() = runTest {
+        val vm = viewModel()
+        vm.start(AgentProvider.OPEN_HANDS, "ses_1")
+        advanceUntilIdle()
+
+        agents.liveEvents.emit(RealtimeUpdate.AgentStatus("Agent: thinking…", TaskState.RUNNING))
+        advanceUntilIdle()
+
+        assertEquals("Agent: thinking…", vm.state.value.agentStatus)
+        assertTrue(vm.state.value.events.isEmpty())
+    }
+
+    @Test
+    fun `follow up message clears only after successful send`() = runTest {
+        val vm = viewModel()
+        vm.start(AgentProvider.OPEN_HANDS, "ses_1")
+        advanceUntilIdle()
+        agents.liveEvents.emit(RealtimeUpdate.Connected)
+        vm.updateMessageDraft(" Continue from there ")
+
+        vm.sendMessage()
+        advanceUntilIdle()
+
+        assertEquals("", vm.state.value.messageDraft)
+        assertEquals(false, vm.state.value.isSending)
     }
 }

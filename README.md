@@ -121,7 +121,7 @@ credential scan on every push. No workflow depends on private credentials.
 
 * Cancelling a running **OpenCode** task is not supported by its published API; the app
   says so rather than pretending it worked. Deleting the session is offered instead.
-* OpenHands sessions are polled for status; OpenCode sessions stream live output.
+* OpenHands sessions use the OSS Socket.IO protocol for live output and follow-up messages; OpenCode sessions use SSE.
 * This client targets **self-hosted OSS OpenHands**, not OpenHands Cloud — the two
   expose different APIs. See ARCHITECTURE.md, "Which OpenHands".
 * Push notifications are not implemented.

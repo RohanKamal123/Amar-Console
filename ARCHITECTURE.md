@@ -97,7 +97,7 @@ test rather than reaching a phone.
 | Capability | Status |
 | --- | --- |
 | Cancelling a running OpenCode task | OpenCode's published API has no abort route. Reported as unsupported; deleting the session is offered instead. |
-| Live streaming for OpenHands | The OSS server exposes a transcript (`GET .../events`) but no SSE endpoint the app uses, so the console polls at the configured interval and says "Polling status" rather than pretending to stream. |
+| Live streaming for OpenHands | Implemented with the OSS server's Socket.IO endpoint. The client connects to `/socket.io` with `conversation_id`, `latest_event_id`, `providers_set`, and the optional per-conversation key; it receives `oh_event` and sends `oh_user_action`. REST event history remains the initial replay/fallback. |
 
 Everything else the UI offers now maps to a real endpoint: OpenHands supports transcript
 replay (`/events`), cancellation (`/stop`), deletion (`DELETE`) and follow-up messages

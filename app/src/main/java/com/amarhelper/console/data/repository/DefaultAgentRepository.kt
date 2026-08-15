@@ -13,17 +13,18 @@ import com.amarhelper.console.data.remote.opencode.OpenCodeEventStream
 import com.amarhelper.console.data.remote.opencode.SendMessageRequest
 import com.amarhelper.console.data.remote.openhands.InitSessionRequest
 import com.amarhelper.console.data.remote.openhands.OpenHandsApi
+import com.amarhelper.console.data.remote.openhands.OpenHandsEventMapper
+import com.amarhelper.console.data.remote.openhands.OpenHandsRealtimeClient
 import com.amarhelper.console.domain.model.AgentProvider
 import com.amarhelper.console.domain.model.AgentSession
 import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.TaskState
 import com.amarhelper.console.domain.model.TaskSubmission
-import com.amarhelper.console.domain.model.ToolCall
+import com.amarhelper.console.domain.model.RealtimeUpdate
 import com.amarhelper.console.domain.repository.AgentRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 
@@ -39,6 +40,7 @@ class DefaultAgentRepository @Inject constructor(
     private val configStore: ConfigStore,
     private val clientFactory: ApiClientFactory,
     private val eventStream: OpenCodeEventStream,
+    private val openHandsRealtime: OpenHandsRealtimeClient,
 ) : AgentRepository {
 
     private suspend fun openHands(): OpenHandsApi? {
@@ -204,7 +206,7 @@ class DefaultAgentRepository @Inject constructor(
                     when (val result = safeResponseCall { api.events(sessionId, limit = EVENT_PAGE_SIZE) }) {
                         is ApiResult.Failure -> result
                         is ApiResult.Success -> ApiResult.Success(
-                            mergeToolEvents(result.data.events.mapNotNull { it.toConsoleEvent() }),
+                            OpenHandsEventMapper.transcript(result.data.events),
                         )
                     }
                 }
@@ -244,15 +246,49 @@ class DefaultAgentRepository @Inject constructor(
             }
         }
 
-    override fun liveEvents(provider: AgentProvider, sessionId: String): Flow<ConsoleEvent> = when (provider) {
+    override fun liveEvents(provider: AgentProvider, sessionId: String): Flow<RealtimeUpdate> = when (provider) {
         AgentProvider.OPEN_CODE -> flow {
             val url = configStore.current().openCodeUrl
-            if (url.isNotBlank()) emitAll(eventStream.events(url, sessionId))
+            if (url.isNotBlank()) {
+                emit(RealtimeUpdate.Connected)
+                eventStream.events(url, sessionId).collect { emit(RealtimeUpdate.Event(it)) }
+            }
         }
-        AgentProvider.OPEN_HANDS -> emptyFlow()
+        AgentProvider.OPEN_HANDS -> flow {
+            val config = configStore.current()
+            if (config.openHandsUrl.isBlank()) return@flow
+            val api = openHands() ?: return@flow
+            when (val result = safeResponseCall { api.conversation(sessionId) }) {
+                is ApiResult.Failure -> throw IllegalStateException(result.error.message)
+                is ApiResult.Success -> emitAll(
+                    openHandsRealtime.updates(config.openHandsUrl, result.data, latestEventId = null),
+                )
+            }
+        }
     }
 
-    override fun supportsStreaming(provider: AgentProvider): Boolean = provider == AgentProvider.OPEN_CODE
+    override fun supportsStreaming(provider: AgentProvider): Boolean = true
+
+    override suspend fun sendMessage(
+        provider: AgentProvider,
+        sessionId: String,
+        message: String,
+    ): ApiResult<Unit> = when (provider) {
+        AgentProvider.OPEN_HANDS -> if (openHandsRealtime.sendMessage(sessionId, message)) {
+            ApiResult.Success(Unit)
+        } else {
+            ApiResult.Failure(AppError.Offline("Realtime connection is not ready. Reconnect and try again."))
+        }
+        AgentProvider.OPEN_CODE -> {
+            val api = openCode() ?: return ApiResult.Failure(AppError.NotConfigured("OpenCode"))
+            when (val result = safeResponseCall {
+                api.sendPromptAsync(sessionId, SendMessageRequest(parts = listOf(MessagePartDto(text = message))))
+            }) {
+                is ApiResult.Success -> ApiResult.Success(Unit)
+                is ApiResult.Failure -> result
+            }
+        }
+    }
 
     override suspend fun cancel(provider: AgentProvider, sessionId: String): ApiResult<Unit> = when (provider) {
         AgentProvider.OPEN_HANDS -> {
@@ -308,115 +344,14 @@ class DefaultAgentRepository @Inject constructor(
         detail = runtimeStatus?.substringAfter('$')?.lowercase()?.replace('_', ' '),
     )
 
-    /**
-     * One OpenHands event → one console line.
-     *
-     * Events are heterogeneous (actions, observations, messages), so they arrive as raw
-     * JSON objects and only the keys the server guarantees are read.
-     */
-    private fun kotlinx.serialization.json.JsonObject.toConsoleEvent(): ConsoleEvent? {
-        fun str(key: String): String? =
-            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString || key == "id" }?.content
-
-        fun obj(key: String): kotlinx.serialization.json.JsonObject? =
-            this[key] as? kotlinx.serialization.json.JsonObject
-
-        fun kotlinx.serialization.json.JsonObject.value(key: String): String? =
-            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.content
-
-        val source = str("source")
-        val action = str("action")
-        val observation = str("observation")
-        val message = str("message")?.takeIf { it.isNotBlank() }
-        val args = obj("args")
-        val extras = obj("extras")
-        val content = str("content")?.takeIf { it.isNotBlank() }
-        val command = args?.value("command") ?: extras?.value("command")
-        val diff = str("diff") ?: extras?.value("diff")
-        val isTool = action in TOOL_ACTIONS || observation in TOOL_OBSERVATIONS
-        val toolName = action ?: observation
-        val tool = if (isTool && toolName != null) {
-            ToolCall(
-                name = toolName,
-                callId = str("id"),
-                causeId = str("cause"),
-                command = command,
-                output = diff ?: content,
-                language = command?.let { "shell" },
-                isDiff = diff != null || content?.let(::looksLikeUnifiedDiff) == true,
-                succeeded = str("success")?.toBooleanStrictOrNull(),
-            )
-        } else null
-        val text = message
-            ?: command
-            ?: diff
-            ?: content
-            ?: action?.let { "$it()" }
-            ?: observation?.let { "$it observed" }
-            ?: return null
-
-        val kind = when {
-            observation == "error" -> ConsoleEvent.Kind.ERROR
-            source == "user" -> ConsoleEvent.Kind.USER
-            isTool -> ConsoleEvent.Kind.TOOL
-            source == "environment" -> ConsoleEvent.Kind.SYSTEM
-            else -> ConsoleEvent.Kind.AGENT
-        }
-
-        return ConsoleEvent(
-            id = str("id") ?: text.hashCode().toString(),
-            kind = kind,
-            text = text,
-            timestampEpochMillis = StatusMapping.parseIsoTimestamp(str("timestamp")),
-            tool = tool,
-        )
-    }
-
-    /** OpenHands emits an action and its observation separately, linked by `cause`. */
-    private fun mergeToolEvents(events: List<ConsoleEvent>): List<ConsoleEvent> {
-        val merged = mutableListOf<ConsoleEvent>()
-        val actionIndex = mutableMapOf<String, Int>()
-        events.forEach { event ->
-            val tool = event.tool
-            val actionPosition = tool?.causeId?.let(actionIndex::get)
-            if (tool != null && actionPosition != null) {
-                val action = merged[actionPosition]
-                val actionTool = action.tool!!
-                merged[actionPosition] = action.copy(
-                    tool = actionTool.copy(
-                        output = tool.output ?: actionTool.output,
-                        isDiff = tool.isDiff || actionTool.isDiff,
-                        succeeded = tool.succeeded ?: actionTool.succeeded,
-                    ),
-                )
-            } else {
-                merged += event
-                tool?.callId?.let { actionIndex[it] = merged.lastIndex }
-            }
-        }
-        return merged
-    }
-
     private fun String.toTitle(): String {
         val firstLine = trim().lineSequence().firstOrNull().orEmpty()
         return if (firstLine.length <= TITLE_LIMIT) firstLine else firstLine.take(TITLE_LIMIT - 1) + "…"
     }
 
-    private fun looksLikeUnifiedDiff(text: String): Boolean =
-        text.lineSequence().any { it.startsWith("@@ ") } &&
-            text.lineSequence().any { it.startsWith("--- ") || it.startsWith("+++ ") }
-
     private companion object {
         const val SESSION_PAGE_SIZE = 30
         const val EVENT_PAGE_SIZE = 100
         const val TITLE_LIMIT = 60
-        val TOOL_ACTIONS = setOf(
-            "read", "write", "edit", "run", "run_ipython", "browse", "browse_interactive",
-            "call_tool_mcp", "delegate", "push", "send_pr", "task_tracking",
-        )
-        val TOOL_OBSERVATIONS = setOf(
-            "read", "write", "edit", "run", "run_ipython", "browse", "delegate", "mcp",
-            "download", "task_tracking",
-        )
     }
 }
