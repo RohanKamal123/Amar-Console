@@ -43,12 +43,28 @@ data class AgentSession(
     val detail: String? = null,
 )
 
-/** One line in the session console. */
+/**
+ * One event from an agent.
+ *
+ * [eventId] and [causeId] carry the provider's own linkage: an observation names the
+ * action it answers, which is what lets the transcript pair a command with its output
+ * into a single card instead of two loose lines.
+ */
 data class ConsoleEvent(
     val id: String,
     val kind: Kind,
     val text: String,
     val timestampEpochMillis: Long?,
+    val eventId: Long? = null,
+    val causeId: Long? = null,
+    /** The tool or action name, when this event is one. */
+    val toolName: String? = null,
+    /** The command or arguments an action was invoked with. */
+    val command: String? = null,
+    /** True for provider bookkeeping (agent state changes) rather than conversation content. */
+    val isStatusOnly: Boolean = false,
+    /** Agent state reported by a status event, e.g. `running`, `awaiting_user_input`. */
+    val agentState: String? = null,
 ) {
     enum class Kind { USER, AGENT, TOOL, SYSTEM, ERROR }
 }

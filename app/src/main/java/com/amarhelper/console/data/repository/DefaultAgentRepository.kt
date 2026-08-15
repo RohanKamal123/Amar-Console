@@ -233,6 +233,7 @@ class DefaultAgentRepository @Inject constructor(
                                             kind = if (part.type == "tool") ConsoleEvent.Kind.TOOL else kind,
                                             text = it,
                                             timestampEpochMillis = StatusMapping.normalizeEpoch(envelope.info?.time?.created),
+                                            toolName = part.tool,
                                         )
                                     }
                                 }
@@ -314,30 +315,59 @@ class DefaultAgentRepository @Inject constructor(
      * JSON objects and only the keys the server guarantees are read.
      */
     private fun kotlinx.serialization.json.JsonObject.toConsoleEvent(): ConsoleEvent? {
-        fun str(key: String): String? =
-            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString || key == "id" }?.content
+        fun prim(key: String) = this[key] as? kotlinx.serialization.json.JsonPrimitive
+        fun str(key: String): String? = prim(key)?.takeIf { it.isString }?.content
+        fun long(key: String): Long? = prim(key)?.content?.toLongOrNull()
 
         val source = str("source")
         val action = str("action")
         val observation = str("observation")
-        val text = str("message")?.takeIf { it.isNotBlank() }
-            ?: action?.let { "$it()" }
-            ?: observation?.let { "$it observed" }
-            ?: return null
+        val args = this["args"] as? kotlinx.serialization.json.JsonObject
+        val message = str("message")?.takeIf { it.isNotBlank() }
+
+        // agent_state_changed is bookkeeping, not conversation: it drives the status
+        // indicator and is kept out of the transcript entirely.
+        if (observation == "agent_state_changed" || action == "change_agent_state") {
+            val state = args?.get("agent_state")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            return ConsoleEvent(
+                id = "state-${long("id") ?: message.hashCode()}",
+                kind = ConsoleEvent.Kind.SYSTEM,
+                text = message.orEmpty(),
+                timestampEpochMillis = StatusMapping.parseIsoTimestamp(str("timestamp")),
+                eventId = long("id"),
+                isStatusOnly = true,
+                agentState = state,
+            )
+        }
+
+        val command = args?.let { arguments ->
+            listOf("command", "code", "content", "path", "query")
+                .firstNotNullOfOrNull { key ->
+                    (arguments[key] as? kotlinx.serialization.json.JsonPrimitive)
+                        ?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+                }
+        }
+
+        val text = message ?: command ?: action?.let { "$it()" } ?: observation ?: return null
 
         val kind = when {
             observation == "error" -> ConsoleEvent.Kind.ERROR
             source == "user" -> ConsoleEvent.Kind.USER
-            source == "environment" -> ConsoleEvent.Kind.SYSTEM
             action != null && action != "message" -> ConsoleEvent.Kind.TOOL
+            observation != null -> ConsoleEvent.Kind.TOOL
+            source == "environment" -> ConsoleEvent.Kind.SYSTEM
             else -> ConsoleEvent.Kind.AGENT
         }
 
         return ConsoleEvent(
-            id = str("id") ?: text.hashCode().toString(),
+            id = long("id")?.toString() ?: text.hashCode().toString(),
             kind = kind,
             text = text,
             timestampEpochMillis = StatusMapping.parseIsoTimestamp(str("timestamp")),
+            eventId = long("id"),
+            causeId = long("cause"),
+            toolName = action ?: observation,
+            command = command,
         )
     }
 

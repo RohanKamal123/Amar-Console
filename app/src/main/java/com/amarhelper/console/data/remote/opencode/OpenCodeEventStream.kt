@@ -123,7 +123,13 @@ class OpenCodeEventStream @Inject constructor(
                 }
             "tool" -> {
                 val tool = part["tool"]?.jsonPrimitive?.contentOrNullSafe() ?: "tool"
-                ConsoleEvent(id, ConsoleEvent.Kind.TOOL, "$tool()", System.currentTimeMillis())
+                ConsoleEvent(
+                    id = id,
+                    kind = ConsoleEvent.Kind.TOOL,
+                    text = "$tool()",
+                    timestampEpochMillis = System.currentTimeMillis(),
+                    toolName = tool,
+                )
             }
             else -> null
         }
