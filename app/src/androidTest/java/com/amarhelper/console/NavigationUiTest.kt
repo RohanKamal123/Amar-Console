@@ -4,10 +4,14 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.amarhelper.console.ui.settings.SETTINGS_LIST_TAG
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,8 +35,12 @@ class NavigationUiTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Settings").assertIsDisplayed()
         composeRule.onNodeWithText("OpenHands").assertIsDisplayed()
-        composeRule.onNodeWithText("OpenCode").assertIsDisplayed()
-        composeRule.onNodeWithText("LiteLLM").assertIsDisplayed()
+
+        // Services below the fold are not composed at all until the list scrolls to them.
+        listOf("OpenCode", "LiteLLM", "Gateway / API").forEach { service ->
+            composeRule.onNodeWithTag(SETTINGS_LIST_TAG).performScrollToNode(hasText(service))
+            composeRule.onNodeWithText(service).assertIsDisplayed()
+        }
     }
 
     @Test

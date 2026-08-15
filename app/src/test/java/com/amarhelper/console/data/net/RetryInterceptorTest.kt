@@ -118,10 +118,21 @@ class RetryInterceptorTest {
 
     @Test
     fun `a dropped connection on a GET is retried`() {
+        // A dedicated client: after DISCONNECT_AT_START the server needs a moment before
+        // it accepts again, and the 10ms backoff the other tests use is short enough that
+        // every attempt can land inside that window on a slow CI runner.
+        val patientClient = OkHttpClient.Builder()
+            .retryOnConnectionFailure(false)
+            .callTimeout(10, TimeUnit.SECONDS)
+            .addInterceptor(RetryInterceptor(maxAttempts = 4, initialBackoffMillis = 250))
+            .build()
+
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
         server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(200))
 
-        val response = client.newCall(Request.Builder().url(server.url("/flaky")).build()).execute()
+        val response = patientClient.newCall(Request.Builder().url(server.url("/flaky")).build()).execute()
 
         assertEquals(200, response.code)
         response.close()

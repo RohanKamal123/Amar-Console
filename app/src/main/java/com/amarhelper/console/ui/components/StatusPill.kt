@@ -11,7 +11,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Schedule
@@ -81,7 +81,7 @@ fun TaskStatePill(state: TaskState, modifier: Modifier = Modifier, dark: Boolean
         TaskState.COMPLETED -> Triple(Icons.Filled.CheckCircle, emeraldContainer(dark), emeraldContent(dark))
         TaskState.FAILED -> Triple(Icons.Filled.ErrorOutline, roseContainer(dark), roseContent(dark))
         TaskState.CANCELLED -> Triple(Icons.Filled.RemoveCircleOutline, slateContainer(dark), slateContent(dark))
-        TaskState.UNKNOWN -> Triple(Icons.Filled.HelpOutline, slateContainer(dark), slateContent(dark))
+        TaskState.UNKNOWN -> Triple(Icons.AutoMirrored.Filled.HelpOutline, slateContainer(dark), slateContent(dark))
     }
     StatusPill(state.name, icon, container, content, modifier)
 }
@@ -93,7 +93,7 @@ fun HealthPill(state: HealthState, modifier: Modifier = Modifier, dark: Boolean 
         HealthState.DEGRADED -> Triple("Degraded", Icons.Filled.ErrorOutline, amberContainer(dark) to amberContent(dark))
         HealthState.OFFLINE -> Triple("Offline", Icons.Filled.Circle, roseContainer(dark) to roseContent(dark))
         HealthState.NOT_CONFIGURED -> Triple("Not set up", Icons.Filled.RemoveCircleOutline, slateContainer(dark) to slateContent(dark))
-        HealthState.UNKNOWN -> Triple("Unknown", Icons.Filled.HelpOutline, slateContainer(dark) to slateContent(dark))
+        HealthState.UNKNOWN -> Triple("Unknown", Icons.AutoMirrored.Filled.HelpOutline, slateContainer(dark) to slateContent(dark))
     }
     StatusPill(label, icon, colors.first, colors.second, modifier)
 }

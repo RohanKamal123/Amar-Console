@@ -38,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,6 +53,9 @@ import com.amarhelper.console.data.config.ServiceId
 import com.amarhelper.console.data.config.ThemeMode
 import com.amarhelper.console.ui.components.MinTouchTarget
 import com.amarhelper.console.ui.components.relativeTime
+
+/** Lets instrumented tests scroll the settings list to a service that is below the fold. */
+const val SETTINGS_LIST_TAG = "settings_list"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,7 +90,10 @@ fun SettingsScreen(
         },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .testTag(SETTINGS_LIST_TAG),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
