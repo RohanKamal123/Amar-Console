@@ -49,9 +49,22 @@ data class ConsoleEvent(
     val kind: Kind,
     val text: String,
     val timestampEpochMillis: Long?,
+    val tool: ToolCall? = null,
 ) {
     enum class Kind { USER, AGENT, TOOL, SYSTEM, ERROR }
 }
+
+/** Structured action data retained from provider events for rich, expandable rendering. */
+data class ToolCall(
+    val name: String,
+    val callId: String? = null,
+    val causeId: String? = null,
+    val command: String? = null,
+    val output: String? = null,
+    val language: String? = null,
+    val isDiff: Boolean = false,
+    val succeeded: Boolean? = null,
+)
 
 /** A task the user is composing or has just submitted. */
 data class TaskSubmission(
