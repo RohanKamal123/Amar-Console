@@ -18,6 +18,7 @@ import com.amarhelper.console.domain.model.AgentSession
 import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.TaskState
 import com.amarhelper.console.domain.model.TaskSubmission
+import com.amarhelper.console.domain.model.ToolCall
 import com.amarhelper.console.domain.repository.AgentRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -203,7 +204,7 @@ class DefaultAgentRepository @Inject constructor(
                     when (val result = safeResponseCall { api.events(sessionId, limit = EVENT_PAGE_SIZE) }) {
                         is ApiResult.Failure -> result
                         is ApiResult.Success -> ApiResult.Success(
-                            result.data.events.mapNotNull { it.toConsoleEvent() },
+                            mergeToolEvents(result.data.events.mapNotNull { it.toConsoleEvent() }),
                         )
                     }
                 }
@@ -317,10 +318,39 @@ class DefaultAgentRepository @Inject constructor(
         fun str(key: String): String? =
             (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString || key == "id" }?.content
 
+        fun obj(key: String): kotlinx.serialization.json.JsonObject? =
+            this[key] as? kotlinx.serialization.json.JsonObject
+
+        fun kotlinx.serialization.json.JsonObject.value(key: String): String? =
+            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.content
+
         val source = str("source")
         val action = str("action")
         val observation = str("observation")
-        val text = str("message")?.takeIf { it.isNotBlank() }
+        val message = str("message")?.takeIf { it.isNotBlank() }
+        val args = obj("args")
+        val extras = obj("extras")
+        val content = str("content")?.takeIf { it.isNotBlank() }
+        val command = args?.value("command") ?: extras?.value("command")
+        val diff = str("diff") ?: extras?.value("diff")
+        val isTool = action in TOOL_ACTIONS || observation in TOOL_OBSERVATIONS
+        val toolName = action ?: observation
+        val tool = if (isTool && toolName != null) {
+            ToolCall(
+                name = toolName,
+                callId = str("id"),
+                causeId = str("cause"),
+                command = command,
+                output = diff ?: content,
+                language = command?.let { "shell" },
+                isDiff = diff != null || content?.let(::looksLikeUnifiedDiff) == true,
+                succeeded = str("success")?.toBooleanStrictOrNull(),
+            )
+        } else null
+        val text = message
+            ?: command
+            ?: diff
+            ?: content
             ?: action?.let { "$it()" }
             ?: observation?.let { "$it observed" }
             ?: return null
@@ -328,8 +358,8 @@ class DefaultAgentRepository @Inject constructor(
         val kind = when {
             observation == "error" -> ConsoleEvent.Kind.ERROR
             source == "user" -> ConsoleEvent.Kind.USER
+            isTool -> ConsoleEvent.Kind.TOOL
             source == "environment" -> ConsoleEvent.Kind.SYSTEM
-            action != null && action != "message" -> ConsoleEvent.Kind.TOOL
             else -> ConsoleEvent.Kind.AGENT
         }
 
@@ -338,7 +368,33 @@ class DefaultAgentRepository @Inject constructor(
             kind = kind,
             text = text,
             timestampEpochMillis = StatusMapping.parseIsoTimestamp(str("timestamp")),
+            tool = tool,
         )
+    }
+
+    /** OpenHands emits an action and its observation separately, linked by `cause`. */
+    private fun mergeToolEvents(events: List<ConsoleEvent>): List<ConsoleEvent> {
+        val merged = mutableListOf<ConsoleEvent>()
+        val actionIndex = mutableMapOf<String, Int>()
+        events.forEach { event ->
+            val tool = event.tool
+            val actionPosition = tool?.causeId?.let(actionIndex::get)
+            if (tool != null && actionPosition != null) {
+                val action = merged[actionPosition]
+                val actionTool = action.tool!!
+                merged[actionPosition] = action.copy(
+                    tool = actionTool.copy(
+                        output = tool.output ?: actionTool.output,
+                        isDiff = tool.isDiff || actionTool.isDiff,
+                        succeeded = tool.succeeded ?: actionTool.succeeded,
+                    ),
+                )
+            } else {
+                merged += event
+                tool?.callId?.let { actionIndex[it] = merged.lastIndex }
+            }
+        }
+        return merged
     }
 
     private fun String.toTitle(): String {
@@ -346,9 +402,21 @@ class DefaultAgentRepository @Inject constructor(
         return if (firstLine.length <= TITLE_LIMIT) firstLine else firstLine.take(TITLE_LIMIT - 1) + "…"
     }
 
+    private fun looksLikeUnifiedDiff(text: String): Boolean =
+        text.lineSequence().any { it.startsWith("@@ ") } &&
+            text.lineSequence().any { it.startsWith("--- ") || it.startsWith("+++ ") }
+
     private companion object {
         const val SESSION_PAGE_SIZE = 30
         const val EVENT_PAGE_SIZE = 100
         const val TITLE_LIMIT = 60
+        val TOOL_ACTIONS = setOf(
+            "read", "write", "edit", "run", "run_ipython", "browse", "browse_interactive",
+            "call_tool_mcp", "delegate", "push", "send_pr", "task_tracking",
+        )
+        val TOOL_OBSERVATIONS = setOf(
+            "read", "write", "edit", "run", "run_ipython", "browse", "delegate", "mcp",
+            "download", "task_tracking",
+        )
     }
 }
