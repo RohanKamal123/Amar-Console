@@ -34,7 +34,15 @@ object UrlValidator {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return UrlValidation.Invalid("Enter a URL.")
 
-        val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
+        // A bare host defaults to the scheme that host is likely to speak. Tailnet peers,
+        // LAN addresses and loopback serve plain HTTP — these services ship without TLS —
+        // so defaulting them to https produced a handshake failure against a working
+        // backend. Everything else still defaults to https.
+        val withScheme = when {
+            trimmed.contains("://") -> trimmed
+            isPrivateOrTailnet(trimmed.substringBefore(':').substringBefore('/')) -> "http://$trimmed"
+            else -> "https://$trimmed"
+        }
         val url = withScheme.toHttpUrlOrNull()
             ?: return UrlValidation.Invalid("That isn't a valid URL.")
 
@@ -48,23 +56,21 @@ object UrlValidator {
         // Strip any trailing slash; Retrofit base URLs are rebuilt with one.
         val normalized = url.newBuilder().build().toString().trimEnd('/')
 
-        if (url.scheme == "http") {
-            val privateHost = privateHostPatterns.any { it.matches(host) }
-            val magicDns = magicDnsSuffix.containsMatchIn(host)
-            if (!privateHost && !magicDns) {
-                return UrlValidation.Invalid(
-                    "Plain http is only allowed for private or tailnet hosts. Use https for $host.",
-                )
-            }
-            if (privateHost && !magicDns && host != "localhost" && !host.startsWith("127.")) {
-                return UrlValidation.Valid(
-                    normalized,
-                    warning = "Android blocks cleartext to raw IPs. Use the MagicDNS name " +
-                        "(host.tailnet-name.ts.net) or https.",
-                )
-            }
+        // This is the app's only gate on cleartext, so it is the one that has to hold:
+        // http is allowed to hosts that cannot be reached from the public internet, and
+        // refused everywhere else. A tailnet address (100.64.0.0/10) is allowed, since
+        // that is the address Tailscale shows first and the traffic is already
+        // WireGuard-encrypted end to end.
+        if (url.scheme == "http" && !isPrivateOrTailnet(host)) {
+            return UrlValidation.Invalid(
+                "Plain http is only allowed for private or tailnet hosts. Use https for $host.",
+            )
         }
 
         return UrlValidation.Valid(normalized)
     }
+
+    /** True for loopback, RFC1918, the Tailscale CGNAT range, and MagicDNS names. */
+    private fun isPrivateOrTailnet(host: String): Boolean =
+        privateHostPatterns.any { it.matches(host) } || magicDnsSuffix.containsMatchIn(host)
 }

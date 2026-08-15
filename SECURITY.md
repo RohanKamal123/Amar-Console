@@ -32,24 +32,33 @@ device.
 The intended topology is **VPN-only**: services stay unexposed to the public internet
 and the phone reaches them over Tailscale or WireGuard.
 
-`res/xml/network_security_config.xml` refuses cleartext HTTP by default and permits it
-only for hosts that are unreachable from the internet:
+Cleartext HTTP is refused for any host reachable from the public internet. It is allowed
+only where it cannot be intercepted:
 
-* `*.ts.net` — Tailscale MagicDNS names (traffic is already WireGuard-encrypted)
-* `localhost` — on-device testing
-* `10.0.2.2` — the host loopback as seen from an emulator
+* `*.ts.net` — Tailscale MagicDNS names
+* `100.64.0.0/10` — tailnet addresses (traffic is already WireGuard-encrypted)
+* `10/8`, `192.168/16`, `172.16/12` — RFC1918 LAN addresses
+* `localhost` / `127.0.0.0/8` — on-device testing
 
 Everything else must be `https://`, validated against the system trust store. The app
 does **not** disable certificate validation, does not ship a custom trust manager, and
-does not accept user-installed CAs in release builds.
+does not accept user-installed CAs.
 
-`UrlValidator` applies the same rule before a URL is even saved, so the user gets an
-explanation in Settings rather than an opaque failure at request time.
+**Where this is enforced.** In `UrlValidator`, at the moment a URL is saved — not in
+`network_security_config.xml`. That is a deliberate trade-off, and it is worth being
+explicit about why the platform layer was given up:
 
-**Known limitation:** Android matches hostnames, not CIDR ranges, so cleartext to a raw
-`100.64.0.0/10` tailnet IP cannot be allowed by configuration. Enable MagicDNS and use
-`http://host.tailnet-name.ts.net:PORT`, or terminate TLS. The app warns about exactly
-this when you type such a URL.
+Android's network security config matches hostnames, not address ranges. A static config
+strict enough to block public cleartext also blocks `http://100.87.52.65:4096` — a
+tailnet peer's own address, the one the Tailscale app shows first, and one that is not
+routable from the internet at all. Blocking it produced a failure that looked like a
+network outage while the VPN was healthy. Expressing "private ranges yes, public no"
+requires range matching, which only the validator can do.
+
+The consequence is that `UrlValidator` is now the single gate rather than one of two, so
+it is held to that standard: it is the only writer of service URLs (Settings →
+`saveUrl` → `ConfigStore`), and its rules are covered by unit tests including the
+addresses immediately outside the tailnet range.
 
 ## Logging
 

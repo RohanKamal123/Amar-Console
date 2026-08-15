@@ -62,11 +62,11 @@ the services you actually use.
 | Gateway / API | `https://gw.your-tailnet.ts.net` | optional; supplies PostgreSQL and Redis health |
 
 **Network topology.** The app is built for VPN-only access (Tailscale or WireGuard).
-Cleartext `http://` is permitted only to `*.ts.net` MagicDNS names, `localhost` and the
-emulator loopback; everything else must be `https://`. Android matches hostnames rather
-than IP ranges, so a raw `100.x.y.z` tailnet address over http is blocked by the
-platform — enable MagicDNS and use the `.ts.net` name. Settings warns you about this as
-you type.
+Cleartext `http://` is permitted to tailnet hosts — both MagicDNS names and
+`100.64.0.0/10` addresses — plus RFC1918 LAN addresses and loopback. Any public host
+must use `https://`. A bare host with no scheme defaults to `http://` when it is private
+or tailnet, and `https://` otherwise, so pasting `vmi3507647.tail7bf6b1.ts.net:4096`
+does the right thing.
 
 **Credentials.** Tokens are encrypted with an AES-256 key held in the Android Keystore
 and are never displayed again after saving. See [SECURITY.md](SECURITY.md).

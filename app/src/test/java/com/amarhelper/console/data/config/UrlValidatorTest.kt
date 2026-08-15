@@ -44,10 +44,30 @@ class UrlValidatorTest {
     }
 
     @Test
-    fun `cleartext to a raw tailnet ip warns that android will block it`() {
-        val result = UrlValidator.validate("http://100.101.102.103:4096")
+    fun `cleartext to a raw tailnet ip is allowed without a caveat`() {
+        // The address Tailscale shows first must work: it is unreachable from the
+        // internet and the traffic is already WireGuard-encrypted.
+        val result = UrlValidator.validate("http://100.87.52.65:4096")
         assertTrue(result is UrlValidation.Valid)
-        assertTrue((result as UrlValidation.Valid).warning!!.contains("MagicDNS"))
+        assertEquals(null, (result as UrlValidation.Valid).warning)
+    }
+
+    @Test
+    fun `addresses just outside the tailnet range are still treated as public`() {
+        assertTrue(UrlValidator.validate("http://100.63.0.1:4096") is UrlValidation.Invalid)
+        assertTrue(UrlValidator.validate("http://100.128.0.1:4096") is UrlValidation.Invalid)
+    }
+
+    @Test
+    fun `a bare tailnet host defaults to http rather than a failing https handshake`() {
+        val magicDns = UrlValidator.validate("vmi3507647.tail7bf6b1.ts.net:4096")
+        assertEquals("http://vmi3507647.tail7bf6b1.ts.net:4096", (magicDns as UrlValidation.Valid).normalized)
+
+        val tailnetIp = UrlValidator.validate("100.87.52.65:3000")
+        assertEquals("http://100.87.52.65:3000", (tailnetIp as UrlValidation.Valid).normalized)
+
+        val lan = UrlValidator.validate("192.168.1.50:4096")
+        assertEquals("http://192.168.1.50:4096", (lan as UrlValidation.Valid).normalized)
     }
 
     @Test

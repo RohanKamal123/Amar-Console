@@ -51,6 +51,15 @@ class ErrorMapperTest {
     }
 
     @Test
+    fun `a cleartext block is not reported as a VPN problem`() {
+        val error = ErrorMapper.fromThrowable(
+            java.net.UnknownServiceException("CLEARTEXT communication to 100.87.52.65 not permitted"),
+        )
+        assertTrue(error.message.contains("plain-HTTP"))
+        assertFalse(error.message.contains("VPN"))
+    }
+
+    @Test
     fun `cancellation is not reported as a failure of the backend`() {
         assertEquals(AppError.Cancelled, ErrorMapper.fromThrowable(CancellationException("scope closed")))
     }

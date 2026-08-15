@@ -2,27 +2,22 @@
 <!--
   Topology: VPN-only (Tailscale / WireGuard).
 
-  Cleartext HTTP is refused everywhere by default. It is permitted ONLY for hosts
-  that cannot be reached from the public internet:
+  Cleartext is permitted at the platform level, and refused instead by UrlValidator,
+  which is the single gate every configured URL passes through before it is stored.
 
-    * .ts.net       Tailscale MagicDNS names (traffic is already WireGuard-encrypted)
-    * localhost     on-device testing
-    * 10.0.2.2      the host loopback as seen from an Android emulator
+  Why not enforce it here as well: Android matches hostnames, not address ranges, so a
+  config strict enough to block public http also blocks http to a tailnet peer's own
+  100.64.0.0/10 address — the address Tailscale shows first, and one that is not
+  reachable from the internet at all. Enforcing in the validator lets the app allow
+  private, tailnet and loopback hosts by range while still refusing cleartext to any
+  public host, which the static config cannot express.
 
-  Reaching a tailnet peer by raw 100.64.0.0/10 address over http:// will be blocked,
-  because Android's config matches hostnames and cannot express a CIDR range. Enable
-  MagicDNS and use the http://host.tailnet-name.ts.net form. See SECURITY.md.
+  UrlValidator is the enforcement point. See SECURITY.md, "Network security".
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">ts.net</domain>
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="false">10.0.2.2</domain>
-    </domain-config>
 </network-security-config>
