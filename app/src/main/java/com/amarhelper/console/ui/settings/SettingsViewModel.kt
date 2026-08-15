@@ -58,12 +58,14 @@ class SettingsViewModel @Inject constructor(
     private val local = MutableStateFlow(SettingsUiState())
 
     private val credentialPresence = combine(
+        credentialStore.presence(ServiceId.IDE),
         credentialStore.presence(ServiceId.OPEN_HANDS),
         credentialStore.presence(ServiceId.OPEN_CODE),
         credentialStore.presence(ServiceId.LITE_LLM),
         credentialStore.presence(ServiceId.GATEWAY),
-    ) { openHands, openCode, liteLlm, gateway ->
+    ) { ide, openHands, openCode, liteLlm, gateway ->
         mapOf(
+            ServiceId.IDE to ide,
             ServiceId.OPEN_HANDS to openHands,
             ServiceId.OPEN_CODE to openCode,
             ServiceId.LITE_LLM to liteLlm,

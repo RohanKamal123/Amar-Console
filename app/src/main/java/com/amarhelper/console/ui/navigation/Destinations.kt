@@ -5,6 +5,7 @@ import android.net.Uri
 object Routes {
     const val SPLASH = "splash"
     const val DASHBOARD = "dashboard"
+    const val WORKSPACES = "workspaces"
     const val NEW_TASK = "task/new"
     const val SESSIONS = "sessions"
     const val SERVICES = "services"

@@ -14,6 +14,7 @@ import com.amarhelper.console.ui.sessions.SessionsScreen
 import com.amarhelper.console.ui.settings.SettingsScreen
 import com.amarhelper.console.ui.splash.SplashScreen
 import com.amarhelper.console.ui.task.NewTaskScreen
+import com.amarhelper.console.ui.workspace.WorkspaceScreen
 
 @Composable
 fun AppNavHost() {
@@ -24,7 +25,7 @@ fun AppNavHost() {
         composable(Routes.SPLASH) {
             SplashScreen(
                 onReady = {
-                    navController.navigate(Routes.DASHBOARD) {
+                    navController.navigate(Routes.WORKSPACES) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 },
@@ -34,6 +35,10 @@ fun AppNavHost() {
                     }
                 },
             )
+        }
+
+        composable(Routes.WORKSPACES) {
+            WorkspaceScreen(onOpenSettings = { navController.navigate(Routes.SETTINGS) })
         }
 
         composable(Routes.DASHBOARD) {
@@ -80,7 +85,7 @@ fun AppNavHost() {
             SettingsScreen(
                 onBack = {
                     if (!navController.popBackStack()) {
-                        navController.navigate(Routes.DASHBOARD) {
+                        navController.navigate(Routes.WORKSPACES) {
                             popUpTo(Routes.SETTINGS) { inclusive = true }
                         }
                     }

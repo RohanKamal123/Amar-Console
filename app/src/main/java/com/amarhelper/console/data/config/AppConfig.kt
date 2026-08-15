@@ -8,6 +8,7 @@ package com.amarhelper.console.data.config
  * the gateway's health endpoint instead (see ARCHITECTURE.md).
  */
 enum class ServiceId(val displayName: String) {
+    IDE("IDE"),
     OPEN_HANDS("OpenHands"),
     OPEN_CODE("OpenCode"),
     LITE_LLM("LiteLLM"),
@@ -29,6 +30,7 @@ enum class Environment(val label: String) {
  */
 data class AppConfig(
     val environment: Environment = Environment.PRODUCTION,
+    val ideUrl: String = "",
     val openHandsUrl: String = "",
     val openCodeUrl: String = "",
     val liteLlmUrl: String = "",
@@ -44,6 +46,7 @@ data class AppConfig(
     val verboseNetworkLogging: Boolean = false,
 ) {
     fun urlFor(service: ServiceId): String = when (service) {
+        ServiceId.IDE -> ideUrl
         ServiceId.OPEN_HANDS -> openHandsUrl
         ServiceId.OPEN_CODE -> openCodeUrl
         ServiceId.LITE_LLM -> liteLlmUrl

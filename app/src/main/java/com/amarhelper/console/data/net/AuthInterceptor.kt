@@ -5,6 +5,7 @@ import com.amarhelper.console.data.security.SecureCredentialStore
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
+import okhttp3.Credentials
 
 /**
  * Attaches the stored credential for exactly one service.
@@ -31,8 +32,13 @@ class AuthInterceptor(
         val token = runBlocking { credentialStore.tokenFor(service) }
             ?: return chain.proceed(request)
 
+        val value = if (service == ServiceId.OPEN_CODE) {
+            Credentials.basic("opencode", token)
+        } else {
+            "Bearer $token"
+        }
         val authorized = request.newBuilder()
-            .header(HEADER_AUTHORIZATION, "Bearer $token")
+            .header(HEADER_AUTHORIZATION, value)
             .build()
         return chain.proceed(authorized)
     }

@@ -1,7 +1,8 @@
 # Amar Console
 
-An Android control surface for a self-hosted AI development stack. Start agent tasks
-from your phone, watch them run, and see whether the services behind them are healthy.
+An Android workspace shell for a self-hosted AI development stack. It hosts the real
+code-server IDE, OpenCode Web, and OpenHands web applications in separate mobile tabs,
+with a native service-health and settings surface.
 
 The app is deployment-agnostic: no URL, host or credential is compiled into the binary.
 You point it at your own OpenHands, OpenCode, LiteLLM and gateway endpoints in Settings,
@@ -15,11 +16,10 @@ and the same APK works against any of them.
 
 ## What it does
 
-* **Dashboard** — service health at a glance, active sessions, recent activity, quick actions.
-* **New task** — pick an agent, describe the work in natural language, submit.
-* **Session console** — a terminal-style view of agent output, streamed where the
-  provider supports it, with tool calls, errors and final results.
-* **Sessions** — active and previous conversations across every configured provider.
+* **IDE** — the complete code-server/VS Code workspace.
+* **OpenCode** — the official OpenCode Web interface, including its sessions and tools.
+* **OpenHands** — the complete self-hosted OpenHands interface, including repositories,
+  skills, workspace, terminal, and conversations supported by the installed server.
 * **Services** — per-service online/offline state, latency, version and last check.
 * **Settings** — endpoints, credentials, connection tests, theme, polling, diagnostics.
 
@@ -41,8 +41,8 @@ kotlinx.serialization, DataStore, Android Keystore. `minSdk` 26, `targetSdk`/`co
 Requirements: JDK 17+, Android SDK with platform 35 and build-tools 35.0.0.
 
 ```bash
-git clone https://github.com/RohanKamal123/Amar-Helper-.git
-cd Amar-Helper-
+git clone https://github.com/RohanKamal123/Amar-Console.git
+cd Amar-Console
 echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties   # not committed
 ./gradlew assembleDebug
 ```
@@ -56,10 +56,14 @@ the services you actually use.
 
 | Service | Typical URL | Notes |
 | --- | --- | --- |
+| IDE | `http://box.your-tailnet.ts.net:8443` | code-server / VS Code web interface |
 | OpenHands | `http://box.your-tailnet.ts.net:3000` | Self-hosted OSS. Bearer token only if your deployment adds auth |
-| OpenCode | `http://box.your-tailnet.ts.net:4096` | started with `opencode serve` |
+| OpenCode | `http://box.your-tailnet.ts.net:4096` | start with `opencode web`, not headless `opencode serve` |
 | LiteLLM | `http://box.your-tailnet.ts.net:4000` | Health probe only; the app never sends your master key. The probed path is configurable in Settings, since deployments often run a custom router in place of the upstream proxy |
 | Gateway / API | `https://gw.your-tailnet.ts.net` | optional; supplies PostgreSQL and Redis health |
+
+For the included custom model router, set the LiteLLM health path to `health`. The
+official LiteLLM Proxy uses the default `health/readiness` path.
 
 **Network topology.** The app is built for VPN-only access (Tailscale or WireGuard).
 Cleartext `http://` is permitted to tailnet hosts — both MagicDNS names and

@@ -1,9 +1,10 @@
 # Architecture
 
-Amar Console is a native Android client for a self-hosted AI development stack. It is a
-control surface: it starts agent tasks, watches them run, and reports the health of the
-services behind them. It holds no business logic of its own beyond translating between
-what the user wants and what each backend actually offers.
+Amar Console is an Android workspace shell for a self-hosted AI development stack. IDE,
+OpenCode, and OpenHands retain their complete upstream interfaces inside isolated
+WebViews; native Kotlin owns encrypted endpoint credentials, service health, settings,
+and navigation. The earlier native task and session clients remain available internally
+but are no longer the default user experience.
 
 ## Layering
 

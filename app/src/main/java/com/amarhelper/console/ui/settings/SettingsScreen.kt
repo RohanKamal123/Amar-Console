@@ -258,7 +258,13 @@ private fun ServiceSettings(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             label = { Text("Base URL") },
-            placeholder = { Text("https://host.tailnet-name.ts.net:4096") },
+            placeholder = {
+                Text(if (service == ServiceId.IDE) {
+                    "https://host.tailnet-name.ts.net:8443"
+                } else {
+                    "https://host.tailnet-name.ts.net:4096"
+                })
+            },
             isError = urlError != null,
             supportingText = {
                 val message = urlError ?: urlWarning
@@ -284,7 +290,16 @@ private fun ServiceSettings(
             onValueChange = { tokenDraft = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text(if (credentialSet) "Replace credential" else "Token or API key (optional)") },
+            label = {
+                Text(
+                    when {
+                        service == ServiceId.OPEN_CODE && credentialSet -> "Replace OpenCode password"
+                        service == ServiceId.OPEN_CODE -> "OpenCode server password"
+                        credentialSet -> "Replace credential"
+                        else -> "Token or API key (optional)"
+                    },
+                )
+            },
             visualTransformation = PasswordVisualTransformation(),
             supportingText = {
                 Text(
@@ -416,4 +431,3 @@ private fun AboutRow(label: String, value: String) {
         )
     }
 }
-
