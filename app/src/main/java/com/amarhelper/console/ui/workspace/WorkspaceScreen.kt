@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -117,13 +119,14 @@ fun WorkspaceScreen(
                 Workspace.OPEN_CODE -> BrowserWorkspace(
                     url = config.openCodeUrl,
                     title = "OpenCode",
-                    basicAuth = { viewModel.openCodePassword() },
                     onReloadAvailable = { reload = it },
+                    useSystemBrowser = true,
                 )
                 Workspace.OPEN_HANDS -> BrowserWorkspace(
                     url = config.openHandsUrl,
                     title = "OpenHands",
                     onReloadAvailable = { reload = it },
+                    useSystemBrowser = true,
                 )
                 Workspace.SERVICES -> ServicesScreen(
                     onBack = { selected = Workspace.OPEN_HANDS },
@@ -140,6 +143,7 @@ private fun BrowserWorkspace(
     title: String,
     basicAuth: (suspend () -> String?)? = null,
     onReloadAvailable: ((() -> Unit)?) -> Unit,
+    useSystemBrowser: Boolean = false,
 ) {
     if (url.isBlank()) {
         Column(Modifier.fillMaxSize().padding(24.dp)) {
@@ -147,6 +151,11 @@ private fun BrowserWorkspace(
             Text("Open Settings and enter the $title web URL.")
         }
         LaunchedEffect(Unit) { onReloadAvailable(null) }
+        return
+    }
+
+    if (useSystemBrowser) {
+        SystemBrowserWorkspace(url = url, title = title, onReloadAvailable = onReloadAvailable)
         return
     }
 
@@ -240,6 +249,40 @@ private fun BrowserWorkspace(
             },
         )
         if (progress < 1f) CircularProgressIndicator(progress = { progress })
+    }
+}
+
+@Composable
+private fun SystemBrowserWorkspace(
+    url: String,
+    title: String,
+    onReloadAvailable: ((() -> Unit)?) -> Unit,
+) {
+    val context = LocalContext.current
+    val open: () -> Unit = remember(url) {
+        {
+            openExternally(context, Uri.parse(url))
+            Unit
+        }
+    }
+    LaunchedEffect(url) {
+        onReloadAvailable(open)
+        open()
+    }
+    DisposableEffect(url) {
+        onDispose { onReloadAvailable(null) }
+    }
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
+        Icon(Icons.Default.OpenInBrowser, contentDescription = null)
+        Text("$title opens in Chrome", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Chrome is used because this service's modern web interface does not render " +
+                "reliably in Android's embedded WebView.",
+            modifier = Modifier.padding(vertical = 12.dp),
+        )
+        Button(onClick = { open() }) {
+            Text("Open $title")
+        }
     }
 }
 
