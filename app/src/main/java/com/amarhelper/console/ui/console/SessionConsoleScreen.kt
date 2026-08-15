@@ -2,6 +2,7 @@ package com.amarhelper.console.ui.console
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,10 +15,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -31,6 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -113,6 +119,7 @@ fun SessionConsoleScreen(
 
             ConsoleStatusBar(state = state)
 
+            Box(modifier = Modifier.weight(1f)) {
             when {
                 state.isLoadingSession -> LoadingState("Opening session…")
 
@@ -150,6 +157,16 @@ fun SessionConsoleScreen(
                     }
                 }
             }
+            }
+            if (!state.isLoadingSession && state.session?.state?.isActive == true) {
+                MessageComposer(
+                    value = state.messageDraft,
+                    enabled = state.connection == ConnectionState.LIVE && !state.isSending,
+                    sending = state.isSending,
+                    onValueChange = viewModel::updateMessageDraft,
+                    onSend = viewModel::sendMessage,
+                )
+            }
         }
     }
 }
@@ -176,12 +193,52 @@ private fun ConsoleStatusBar(state: ConsoleUiState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
+        state.agentStatus?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         if (state.events.isNotEmpty()) {
             Text(
                 text = "${state.events.size} lines",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun MessageComposer(
+    value: String,
+    enabled: Boolean,
+    sending: Boolean,
+    onValueChange: (String) -> Unit,
+    onSend: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f),
+            enabled = !sending,
+            maxLines = 5,
+            label = { Text("Message the agent") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (enabled && value.isNotBlank()) onSend() }),
+        )
+        IconButton(
+            onClick = onSend,
+            enabled = enabled && value.isNotBlank(),
+            modifier = Modifier.size(MinTouchTarget),
+        ) {
+            Icon(Icons.Filled.Send, contentDescription = "Send message")
         }
     }
 }

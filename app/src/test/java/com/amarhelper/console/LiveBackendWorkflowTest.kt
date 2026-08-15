@@ -6,6 +6,7 @@ import com.amarhelper.console.data.config.ConfigStore
 import com.amarhelper.console.data.config.ServiceId
 import com.amarhelper.console.data.net.ApiClientFactory
 import com.amarhelper.console.data.remote.opencode.OpenCodeEventStream
+import com.amarhelper.console.data.remote.openhands.OpenHandsRealtimeClient
 import com.amarhelper.console.data.repository.DefaultAgentRepository
 import com.amarhelper.console.data.repository.DefaultServiceHealthRepository
 import com.amarhelper.console.data.security.SecureCredentialStore
@@ -58,7 +59,7 @@ class LiveBackendWorkflowTest {
         val credentials = SecureCredentialStore(context)
         val factory = ApiClientFactory(credentials, Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false })
         val stream = OpenCodeEventStream(credentials, Json { ignoreUnknownKeys = true })
-        val agents = DefaultAgentRepository(configStore, factory, stream)
+        val agents = DefaultAgentRepository(configStore, factory, stream, OpenHandsRealtimeClient(Json { ignoreUnknownKeys = true }, credentials))
         val healthRepo = DefaultServiceHealthRepository(configStore, factory)
 
         println("STEP 1 — service health")

@@ -11,6 +11,7 @@ import com.amarhelper.console.domain.model.AgentProvider
 import com.amarhelper.console.domain.model.AgentSession
 import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.TaskState
+import com.amarhelper.console.domain.model.RealtimeUpdate
 import com.amarhelper.console.domain.repository.AgentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -35,6 +36,9 @@ data class ConsoleUiState(
     val error: AppError? = null,
     val notice: String? = null,
     val droppedLines: Int = 0,
+    val agentStatus: String? = null,
+    val messageDraft: String = "",
+    val isSending: Boolean = false,
 ) {
     val state: TaskState get() = session?.state ?: TaskState.UNKNOWN
 }
@@ -42,10 +46,9 @@ data class ConsoleUiState(
 /**
  * Drives one agent session.
  *
- * OpenCode publishes a server-sent event stream, so output arrives live. The published
- * OpenHands v1 contract exposes conversation status but no per-event transcript, so that
- * provider is polled at the user's configured interval and the console says so rather
- * than pretending to stream.
+ * Both providers publish live events: OpenCode over SSE and self-hosted OpenHands over
+ * Socket.IO. OpenHands state bookkeeping is kept in [ConsoleUiState.agentStatus] rather
+ * than appended to the visible transcript.
  *
  * The event buffer is bounded: past [MAX_EVENTS] lines the oldest are dropped and the
  * count is surfaced in the UI, so a runaway agent cannot exhaust memory.
@@ -113,19 +116,53 @@ class SessionConsoleViewModel @Inject constructor(
                         )
                     }
                 }
-                .collect { event ->
-                    _state.update { current ->
-                        val appended = current.events + event
-                        val overflow = (appended.size - MAX_EVENTS).coerceAtLeast(0)
-                        current.copy(
-                            connection = ConnectionState.LIVE,
-                            error = null,
-                            events = if (overflow > 0) appended.drop(overflow) else appended,
-                            droppedLines = current.droppedLines + overflow,
-                        )
+                .collect { update ->
+                    when (update) {
+                        RealtimeUpdate.Connected -> _state.update {
+                            it.copy(connection = ConnectionState.LIVE, error = null)
+                        }
+                        RealtimeUpdate.Reconnecting -> _state.update {
+                            it.copy(connection = ConnectionState.CONNECTING)
+                        }
+                        is RealtimeUpdate.AgentStatus -> _state.update { current ->
+                            current.copy(
+                                agentStatus = update.label,
+                                session = update.state?.let { current.session?.copy(state = it) } ?: current.session,
+                            )
+                        }
+                        is RealtimeUpdate.Event -> appendEvent(update.event)
                     }
                 }
         }
+    }
+
+    private fun appendEvent(event: ConsoleEvent) = _state.update { current ->
+        val causeId = event.tool?.causeId
+        val actionIndex = causeId?.let { cause ->
+            current.events.indexOfFirst { it.tool?.callId == cause }.takeIf { it >= 0 }
+        }
+        val appended = when {
+            actionIndex != null -> current.events.toMutableList().apply {
+                val action = this[actionIndex]
+                val actionTool = action.tool!!
+                this[actionIndex] = action.copy(
+                    tool = actionTool.copy(
+                        output = event.tool?.output ?: actionTool.output,
+                        isDiff = event.tool?.isDiff == true || actionTool.isDiff,
+                        succeeded = event.tool?.succeeded ?: actionTool.succeeded,
+                    ),
+                )
+            }
+            current.events.any { it.id == event.id } -> current.events.map { if (it.id == event.id) event else it }
+            else -> current.events + event
+        }
+        val overflow = (appended.size - MAX_EVENTS).coerceAtLeast(0)
+        current.copy(
+            connection = ConnectionState.LIVE,
+            error = null,
+            events = if (overflow > 0) appended.drop(overflow) else appended,
+            droppedLines = current.droppedLines + overflow,
+        )
     }
 
     /** Status polling for providers with no stream. Stops as soon as the task is terminal. */
@@ -164,6 +201,23 @@ class SessionConsoleViewModel @Inject constructor(
             when (val result = agentRepository.cancel(provider, sessionId)) {
                 is ApiResult.Success -> loadSession()
                 is ApiResult.Failure -> _state.update { it.copy(notice = result.error.message) }
+            }
+        }
+    }
+
+    fun updateMessageDraft(value: String) = _state.update { it.copy(messageDraft = value) }
+
+    fun sendMessage() {
+        val provider = provider ?: return
+        val message = state.value.messageDraft.trim()
+        if (message.isBlank() || state.value.isSending) return
+        _state.update { it.copy(isSending = true) }
+        viewModelScope.launch {
+            when (val result = agentRepository.sendMessage(provider, sessionId, message)) {
+                is ApiResult.Success -> _state.update { it.copy(messageDraft = "", isSending = false) }
+                is ApiResult.Failure -> _state.update {
+                    it.copy(isSending = false, notice = result.error.message)
+                }
             }
         }
     }

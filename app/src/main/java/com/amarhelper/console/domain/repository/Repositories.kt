@@ -6,6 +6,7 @@ import com.amarhelper.console.domain.model.AgentSession
 import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.DependencyHealth
 import com.amarhelper.console.domain.model.ServiceHealth
+import com.amarhelper.console.domain.model.RealtimeUpdate
 import com.amarhelper.console.domain.model.TaskSubmission
 import kotlinx.coroutines.flow.Flow
 
@@ -21,8 +22,10 @@ interface AgentRepository {
     /** Replays what the agent has already produced. */
     suspend fun history(provider: AgentProvider, sessionId: String): ApiResult<List<ConsoleEvent>>
 
-    /** Live output. Empty flow for providers whose published API has no stream. */
-    fun liveEvents(provider: AgentProvider, sessionId: String): Flow<ConsoleEvent>
+    /** Live transcript, connection and agent-status updates. */
+    fun liveEvents(provider: AgentProvider, sessionId: String): Flow<RealtimeUpdate>
+
+    suspend fun sendMessage(provider: AgentProvider, sessionId: String, message: String): ApiResult<Unit>
 
     fun supportsStreaming(provider: AgentProvider): Boolean
 

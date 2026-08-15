@@ -9,6 +9,7 @@ import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.DependencyHealth
 import com.amarhelper.console.domain.model.HealthState
 import com.amarhelper.console.domain.model.ServiceHealth
+import com.amarhelper.console.domain.model.RealtimeUpdate
 import com.amarhelper.console.domain.model.TaskState
 import com.amarhelper.console.domain.model.TaskSubmission
 import com.amarhelper.console.domain.repository.AgentRepository
@@ -26,9 +27,10 @@ class FakeAgentRepository : AgentRepository {
     var historyResult: ApiResult<List<ConsoleEvent>> = ApiResult.Success(emptyList())
     var cancelResult: ApiResult<Unit> = ApiResult.Failure(AppError.Unsupported("Cancelling a running OpenCode task"))
     var deleteResult: ApiResult<Unit> = ApiResult.Success(Unit)
+    var sendMessageResult: ApiResult<Unit> = ApiResult.Success(Unit)
     var streaming: Boolean = true
 
-    val liveEvents = MutableSharedFlow<ConsoleEvent>(extraBufferCapacity = 64)
+    val liveEvents = MutableSharedFlow<RealtimeUpdate>(extraBufferCapacity = 64)
     var streamFailure: Throwable? = null
 
     var submittedTasks = mutableListOf<TaskSubmission>()
@@ -46,8 +48,11 @@ class FakeAgentRepository : AgentRepository {
     override suspend fun history(provider: AgentProvider, sessionId: String): ApiResult<List<ConsoleEvent>> =
         historyResult
 
-    override fun liveEvents(provider: AgentProvider, sessionId: String): Flow<ConsoleEvent> =
-        streamFailure?.let { failure -> flow<ConsoleEvent> { throw failure } } ?: liveEvents
+    override fun liveEvents(provider: AgentProvider, sessionId: String): Flow<RealtimeUpdate> =
+        streamFailure?.let { failure -> flow<RealtimeUpdate> { throw failure } } ?: liveEvents
+
+    override suspend fun sendMessage(provider: AgentProvider, sessionId: String, message: String): ApiResult<Unit> =
+        sendMessageResult
 
     override fun supportsStreaming(provider: AgentProvider): Boolean = streaming
 
