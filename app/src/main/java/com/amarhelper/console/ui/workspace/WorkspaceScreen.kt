@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,12 +62,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amarhelper.console.data.config.AppConfig
 import com.amarhelper.console.ui.services.ServicesScreen
+import com.amarhelper.console.ui.profile.ProfileScreen
 import kotlinx.coroutines.launch
 
 private enum class Workspace(val label: String, val icon: ImageVector) {
     IDE("IDE", Icons.Default.Computer),
     OPEN_CODE("OpenCode", Icons.Default.Code),
     OPEN_HANDS("OpenHands", Icons.Default.SmartToy),
+    PROFILE("Profile", Icons.Default.AccountCircle),
     SERVICES("Services", Icons.Default.HealthAndSafety),
 }
 
@@ -85,7 +88,7 @@ fun WorkspaceScreen(
             TopAppBar(
                 title = { Text(selected.label) },
                 actions = {
-                    if (selected != Workspace.SERVICES) {
+                    if (selected in setOf(Workspace.IDE, Workspace.OPEN_CODE, Workspace.OPEN_HANDS)) {
                         IconButton(onClick = { reload?.invoke() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Reload workspace")
                         }
@@ -128,6 +131,7 @@ fun WorkspaceScreen(
                     onReloadAvailable = { reload = it },
                     useSystemBrowser = true,
                 )
+                Workspace.PROFILE -> ProfileScreen()
                 Workspace.SERVICES -> ServicesScreen(
                     onBack = { selected = Workspace.OPEN_HANDS },
                     onOpenSettings = onOpenSettings,

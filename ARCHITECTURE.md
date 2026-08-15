@@ -6,6 +6,12 @@ WebViews; native Kotlin owns encrypted endpoint credentials, service health, set
 and navigation. The earlier native task and session clients remain available internally
 but are no longer the default user experience.
 
+The Profile surface reads aggregate usage from the configured LiteLLM-compatible
+router's `GET /usage/summary`. The router attributes traffic with distinct non-secret
+client identifiers and persists only request metadata and provider-returned token counts;
+it does not retain prompts, completions, API keys, or authorization headers. Displayed
+cost is an estimate from configurable per-million-token rates, not an invoice.
+
 ## Layering
 
 ```

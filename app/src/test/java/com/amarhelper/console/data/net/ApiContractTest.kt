@@ -6,6 +6,7 @@ import com.amarhelper.console.data.remote.opencode.CreateSessionRequest
 import com.amarhelper.console.data.remote.opencode.MessagePartDto
 import com.amarhelper.console.data.remote.opencode.OpenCodeApi
 import com.amarhelper.console.data.remote.opencode.SendMessageRequest
+import com.amarhelper.console.data.remote.litellm.LiteLlmApi
 import com.amarhelper.console.data.remote.openhands.InitSessionRequest
 import com.amarhelper.console.data.remote.openhands.OpenHandsApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -175,6 +176,34 @@ class ApiContractTest {
 
         assertEquals("/global/health", server.takeRequest().path)
         assertEquals("0.4.11", (result as ApiResult.Success).data.version)
+    }
+
+    @Test
+    fun `usage ledger parses software model token and pricing breakdowns`() = runTest {
+        server.enqueue(MockResponse().setBody(
+            """{"generated_at":"2026-08-16T00:00:00Z","period_days":30,"currency":"USD",
+                "pricing":{"input_cache_miss_per_million":0.14,"input_cache_hit_per_million":0.0028,
+                "output_per_million":0.28,"note":"estimate"},
+                "totals":{"requests":2,"prompt_tokens":140,"completion_tokens":20,
+                "total_tokens":160,"estimated_cost_usd":0.0000252},
+                "by_software":[{"software":"OpenCode","requests":1,"prompt_tokens":70,
+                "completion_tokens":10,"total_tokens":80,"estimated_cost_usd":0.0000126,
+                "average_duration_ms":839.0}],
+                "by_model":[{"model":"deepseek-v4-flash","requests":2,"total_tokens":160,
+                "estimated_cost_usd":0.0000252}],
+                "recent":[{"created_at":1786835997,"software":"OpenCode","model":"deepseek-v4-flash",
+                "prompt_tokens":70,"completion_tokens":10,"total_tokens":80,
+                "estimated_cost_usd":0.0000126,"duration_ms":839,"status_code":200}]}""".trimIndent(),
+        ))
+
+        val result = safeResponseCall { api<LiteLlmApi>().usageSummary(30) }
+
+        assertEquals("/usage/summary?days=30", server.takeRequest().path)
+        val summary = (result as ApiResult.Success).data
+        assertEquals(160, summary.totals.totalTokens)
+        assertEquals("OpenCode", summary.bySoftware.single().software)
+        assertEquals("deepseek-v4-flash", summary.byModel.single().model)
+        assertEquals(0.28, summary.pricing.outputPerMillion, 0.0)
     }
 
     @Test
