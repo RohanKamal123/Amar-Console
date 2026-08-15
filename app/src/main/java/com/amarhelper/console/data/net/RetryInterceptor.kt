@@ -16,6 +16,11 @@ import okhttp3.Response
  * Retried conditions: transport IOException, 502, 503, 504, and 429 (honouring
  * Retry-After up to a cap). 500 is not retried automatically — it usually means the
  * request itself was rejected, and the user can retry explicitly.
+ *
+ * This sits on top of OkHttp's own connection-level recovery (address failover, stale
+ * pooled connections), which is left enabled. That recovery only ever repeats a request
+ * the server never answered; deciding whether an *answered* request may be repeated is
+ * this interceptor's job.
  */
 class RetryInterceptor(
     private val maxAttempts: Int = 3,

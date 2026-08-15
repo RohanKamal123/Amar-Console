@@ -51,7 +51,12 @@ class ApiClientFactory @Inject constructor(
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(false) // handled explicitly by RetryInterceptor
+        // OkHttp's connection-level recovery stays ON. It is what fails over between a
+        // host's addresses (a tailnet name resolves to both IPv6 and IPv4) and discards
+        // stale pooled connections after a VPN reconnect. It never replays a request the
+        // server already answered — that is [RetryInterceptor]'s job, and it refuses to
+        // replay a POST, so a task can still never be submitted twice.
+        .retryOnConnectionFailure(true)
         .addInterceptor(RetryInterceptor())
         .addInterceptor(AuthInterceptor(service, credentialStore))
         .apply { loggingInterceptor()?.let(::addInterceptor) }

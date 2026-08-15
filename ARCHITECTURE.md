@@ -122,6 +122,12 @@ a keyed `LazyColumn`, so only visible lines are composed.
 submission would run the task twice, which is worse than showing an error. 500 is not
 retried automatically either; the user can retry explicitly.
 
+Underneath, OkHttp's own `retryOnConnectionFailure` recovery is left enabled. The two
+layers do different jobs: OkHttp fails over between a host's addresses (a tailnet name
+resolves to both IPv6 and IPv4) and discards stale pooled connections after a VPN
+reconnect, repeating only requests the server never answered; this interceptor decides
+whether a request the server *did* answer may be sent again — and for a POST, never.
+
 Timeouts: 10s connect, 30s read, 30s write, 60s per call.
 
 ## Security posture

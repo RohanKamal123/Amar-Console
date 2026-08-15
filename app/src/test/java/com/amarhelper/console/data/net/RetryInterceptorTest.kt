@@ -1,5 +1,6 @@
 package com.amarhelper.console.data.net
 
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -23,7 +24,7 @@ class RetryInterceptorTest {
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true) // as in ApiClientFactory
             .callTimeout(5, TimeUnit.SECONDS)
             .addInterceptor(RetryInterceptor(maxAttempts = 3, initialBackoffMillis = 10) { slept += it })
             .build()
@@ -31,7 +32,9 @@ class RetryInterceptorTest {
 
     @Before
     fun setUp() {
-        server = MockWebServer().apply { start() }
+        // Bound explicitly to 127.0.0.1: "localhost" can resolve to ::1 as well, and a
+        // retry that picks the address the server is not listening on fails to connect.
+        server = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
     }
 
     @After
@@ -118,11 +121,10 @@ class RetryInterceptorTest {
 
     @Test
     fun `a dropped connection on a GET is retried`() {
-        // A dedicated client: after DISCONNECT_AT_START the server needs a moment before
-        // it accepts again, and the 10ms backoff the other tests use is short enough that
-        // every attempt can land inside that window on a slow CI runner.
+        // A dedicated client with a longer backoff: on a slow runner the server can need
+        // a moment to accept again after DISCONNECT_AT_START.
         val patientClient = OkHttpClient.Builder()
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true)
             .callTimeout(10, TimeUnit.SECONDS)
             .addInterceptor(RetryInterceptor(maxAttempts = 4, initialBackoffMillis = 250))
             .build()
