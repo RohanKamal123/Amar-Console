@@ -1,0 +1,289 @@
+package com.amarhelper.console.data.repository
+
+import com.amarhelper.console.core.result.ApiResult
+import com.amarhelper.console.core.result.AppError
+import com.amarhelper.console.data.config.ConfigStore
+import com.amarhelper.console.data.config.ServiceId
+import com.amarhelper.console.data.net.ApiClientFactory
+import com.amarhelper.console.data.net.safeResponseCall
+import com.amarhelper.console.data.remote.opencode.CreateSessionRequest
+import com.amarhelper.console.data.remote.opencode.MessagePartDto
+import com.amarhelper.console.data.remote.opencode.OpenCodeApi
+import com.amarhelper.console.data.remote.opencode.OpenCodeEventStream
+import com.amarhelper.console.data.remote.opencode.SendMessageRequest
+import com.amarhelper.console.data.remote.openhands.CreateConversationRequest
+import com.amarhelper.console.data.remote.openhands.InitialMessage
+import com.amarhelper.console.data.remote.openhands.MessageContent
+import com.amarhelper.console.data.remote.openhands.OpenHandsApi
+import com.amarhelper.console.domain.model.AgentProvider
+import com.amarhelper.console.domain.model.AgentSession
+import com.amarhelper.console.domain.model.ConsoleEvent
+import com.amarhelper.console.domain.model.TaskState
+import com.amarhelper.console.domain.model.TaskSubmission
+import com.amarhelper.console.domain.repository.AgentRepository
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+
+/**
+ * Talks to whichever agent providers are configured.
+ *
+ * Every route used here comes from a published API reference. Where a provider's
+ * documented contract has no endpoint for something the UI offers, this returns
+ * [AppError.Unsupported] — it never fabricates a success.
+ */
+@Singleton
+class DefaultAgentRepository @Inject constructor(
+    private val configStore: ConfigStore,
+    private val clientFactory: ApiClientFactory,
+    private val eventStream: OpenCodeEventStream,
+) : AgentRepository {
+
+    private suspend fun openHands(): OpenHandsApi? {
+        val url = configStore.current().openHandsUrl
+        return if (url.isBlank()) null else clientFactory.create(ServiceId.OPEN_HANDS, url, OpenHandsApi::class.java)
+    }
+
+    private suspend fun openCode(): OpenCodeApi? {
+        val url = configStore.current().openCodeUrl
+        return if (url.isBlank()) null else clientFactory.create(ServiceId.OPEN_CODE, url, OpenCodeApi::class.java)
+    }
+
+    override suspend fun availableProviders(): List<AgentProvider> {
+        val config = configStore.current()
+        return buildList {
+            if (config.openHandsUrl.isNotBlank()) add(AgentProvider.OPEN_HANDS)
+            if (config.openCodeUrl.isNotBlank()) add(AgentProvider.OPEN_CODE)
+        }
+    }
+
+    override suspend fun submitTask(submission: TaskSubmission): ApiResult<AgentSession> =
+        when (submission.provider) {
+            AgentProvider.OPEN_HANDS -> submitToOpenHands(submission)
+            AgentProvider.OPEN_CODE -> submitToOpenCode(submission)
+        }
+
+    private suspend fun submitToOpenHands(submission: TaskSubmission): ApiResult<AgentSession> {
+        val api = openHands() ?: return ApiResult.Failure(AppError.NotConfigured("OpenHands"))
+        val request = CreateConversationRequest(
+            initialMessage = InitialMessage(listOf(MessageContent(text = submission.prompt))),
+            selectedRepository = submission.repository?.takeIf { it.isNotBlank() },
+        )
+        return when (val result = safeResponseCall { api.createConversation(request) }) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                val dto = result.data
+                val id = dto.appConversationId ?: dto.id
+                    ?: return ApiResult.Failure(AppError.Malformed("OpenHands did not return a conversation id."))
+                ApiResult.Success(
+                    AgentSession(
+                        id = id,
+                        provider = AgentProvider.OPEN_HANDS,
+                        title = submission.prompt.toTitle(),
+                        state = StatusMapping.fromOpenHands(null, dto.status),
+                        createdAtEpochMillis = StatusMapping.parseIsoTimestamp(dto.createdAt)
+                            ?: System.currentTimeMillis(),
+                        lastActivityEpochMillis = System.currentTimeMillis(),
+                        repository = submission.repository,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * OpenCode needs two calls: create the session, then post the prompt. The prompt is
+     * sent with `prompt_async` so the request returns immediately and progress arrives
+     * over the event stream instead of blocking on a long agent turn.
+     */
+    private suspend fun submitToOpenCode(submission: TaskSubmission): ApiResult<AgentSession> {
+        val api = openCode() ?: return ApiResult.Failure(AppError.NotConfigured("OpenCode"))
+        val created = safeResponseCall { api.createSession(CreateSessionRequest(title = submission.prompt.toTitle())) }
+        val session = when (created) {
+            is ApiResult.Failure -> return created
+            is ApiResult.Success -> created.data
+        }
+        val sent = safeResponseCall {
+            api.sendPromptAsync(session.id, SendMessageRequest(parts = listOf(MessagePartDto(text = submission.prompt))))
+        }
+        if (sent is ApiResult.Failure) return sent
+        return ApiResult.Success(
+            AgentSession(
+                id = session.id,
+                provider = AgentProvider.OPEN_CODE,
+                title = session.title ?: submission.prompt.toTitle(),
+                state = TaskState.RUNNING,
+                createdAtEpochMillis = StatusMapping.normalizeEpoch(session.time?.created) ?: System.currentTimeMillis(),
+                lastActivityEpochMillis = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    override suspend fun listSessions(): ApiResult<List<AgentSession>> {
+        val sessions = mutableListOf<AgentSession>()
+        var lastError: AppError? = null
+
+        openHands()?.let { api ->
+            when (val result = safeResponseCall { api.searchConversations(limit = SESSION_PAGE_SIZE) }) {
+                is ApiResult.Success -> result.data.items.forEach { sessions += it.toDomain() }
+                is ApiResult.Failure -> lastError = result.error
+            }
+        }
+        openCode()?.let { api ->
+            when (val result = safeResponseCall { api.listSessions() }) {
+                is ApiResult.Success -> result.data.forEach { dto ->
+                    sessions += AgentSession(
+                        id = dto.id,
+                        provider = AgentProvider.OPEN_CODE,
+                        title = dto.title.orEmpty().ifBlank { "Untitled session" },
+                        // OpenCode's session object carries no execution status; the console
+                        // derives live state from the event stream.
+                        state = TaskState.UNKNOWN,
+                        createdAtEpochMillis = StatusMapping.normalizeEpoch(dto.time?.created),
+                        lastActivityEpochMillis = StatusMapping.normalizeEpoch(dto.time?.updated),
+                    )
+                }
+                is ApiResult.Failure -> lastError = result.error
+            }
+        }
+
+        // Surface an error only when nothing at all could be listed; a single dead
+        // provider must not blank out sessions from a healthy one.
+        return when {
+            sessions.isNotEmpty() -> ApiResult.Success(
+                sessions.sortedByDescending { it.lastActivityEpochMillis ?: it.createdAtEpochMillis ?: 0L },
+            )
+            lastError != null -> ApiResult.Failure(lastError!!)
+            else -> ApiResult.Success(emptyList())
+        }
+    }
+
+    override suspend fun session(provider: AgentProvider, id: String): ApiResult<AgentSession> = when (provider) {
+        AgentProvider.OPEN_HANDS -> {
+            val api = openHands()
+            if (api == null) {
+                ApiResult.Failure(AppError.NotConfigured("OpenHands"))
+            } else {
+                when (val result = safeResponseCall { api.conversationsByIds(id) }) {
+                    is ApiResult.Failure -> result
+                    is ApiResult.Success -> result.data.firstOrNull()?.toDomain()
+                        ?.let { ApiResult.Success(it) }
+                        ?: ApiResult.Failure(AppError.NotFound("That conversation no longer exists."))
+                }
+            }
+        }
+        AgentProvider.OPEN_CODE -> {
+            val api = openCode()
+            if (api == null) {
+                ApiResult.Failure(AppError.NotConfigured("OpenCode"))
+            } else {
+                when (val result = safeResponseCall { api.session(id) }) {
+                    is ApiResult.Failure -> result
+                    is ApiResult.Success -> ApiResult.Success(
+                        AgentSession(
+                            id = result.data.id,
+                            provider = AgentProvider.OPEN_CODE,
+                            title = result.data.title.orEmpty().ifBlank { "Untitled session" },
+                            state = TaskState.UNKNOWN,
+                            createdAtEpochMillis = StatusMapping.normalizeEpoch(result.data.time?.created),
+                            lastActivityEpochMillis = StatusMapping.normalizeEpoch(result.data.time?.updated),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    override suspend fun history(provider: AgentProvider, sessionId: String): ApiResult<List<ConsoleEvent>> =
+        when (provider) {
+            // The published OpenHands v1 contract exposes conversation status, not a
+            // per-event transcript. Reported as unsupported rather than faked.
+            AgentProvider.OPEN_HANDS -> ApiResult.Failure(AppError.Unsupported("Transcript replay for OpenHands"))
+            AgentProvider.OPEN_CODE -> {
+                val api = openCode()
+                if (api == null) {
+                    ApiResult.Failure(AppError.NotConfigured("OpenCode"))
+                } else {
+                    when (val result = safeResponseCall { api.messages(sessionId) }) {
+                        is ApiResult.Failure -> result
+                        is ApiResult.Success -> ApiResult.Success(
+                            result.data.flatMapIndexed { index, envelope ->
+                                val kind = when (envelope.info?.role) {
+                                    "user" -> ConsoleEvent.Kind.USER
+                                    else -> ConsoleEvent.Kind.AGENT
+                                }
+                                envelope.parts.mapIndexedNotNull { partIndex, part ->
+                                    val text = when (part.type) {
+                                        "text" -> part.text
+                                        "tool" -> part.tool?.let { "$it()" }
+                                        else -> null
+                                    }
+                                    text?.takeIf { it.isNotBlank() }?.let {
+                                        ConsoleEvent(
+                                            id = "${envelope.info?.id ?: index}-$partIndex",
+                                            kind = if (part.type == "tool") ConsoleEvent.Kind.TOOL else kind,
+                                            text = it,
+                                            timestampEpochMillis = StatusMapping.normalizeEpoch(envelope.info?.time?.created),
+                                        )
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+    override fun liveEvents(provider: AgentProvider, sessionId: String): Flow<ConsoleEvent> = when (provider) {
+        AgentProvider.OPEN_CODE -> flow {
+            val url = configStore.current().openCodeUrl
+            if (url.isNotBlank()) emitAll(eventStream.events(url, sessionId))
+        }
+        AgentProvider.OPEN_HANDS -> emptyFlow()
+    }
+
+    override fun supportsStreaming(provider: AgentProvider): Boolean = provider == AgentProvider.OPEN_CODE
+
+    override suspend fun cancel(provider: AgentProvider, sessionId: String): ApiResult<Unit> =
+        // Neither published contract documents an "abort current turn" route.
+        ApiResult.Failure(AppError.Unsupported("Cancelling a running task"))
+
+    override suspend fun deleteSession(provider: AgentProvider, sessionId: String): ApiResult<Unit> = when (provider) {
+        AgentProvider.OPEN_CODE -> {
+            val api = openCode()
+            if (api == null) {
+                ApiResult.Failure(AppError.NotConfigured("OpenCode"))
+            } else {
+                when (val result = safeResponseCall { api.deleteSession(sessionId) }) {
+                    is ApiResult.Failure -> result
+                    is ApiResult.Success -> ApiResult.Success(Unit)
+                }
+            }
+        }
+        AgentProvider.OPEN_HANDS -> ApiResult.Failure(AppError.Unsupported("Deleting an OpenHands conversation"))
+    }
+
+    private fun com.amarhelper.console.data.remote.openhands.ConversationDto.toDomain() = AgentSession(
+        id = id,
+        provider = AgentProvider.OPEN_HANDS,
+        title = title.orEmpty().ifBlank { "Untitled conversation" },
+        state = StatusMapping.fromOpenHands(executionStatus, sandboxStatus),
+        createdAtEpochMillis = StatusMapping.parseIsoTimestamp(createdAt),
+        lastActivityEpochMillis = StatusMapping.parseIsoTimestamp(updatedAt ?: createdAt),
+        repository = selectedRepository,
+        detail = sandboxStatus?.lowercase(),
+    )
+
+    private fun String.toTitle(): String {
+        val firstLine = trim().lineSequence().firstOrNull().orEmpty()
+        return if (firstLine.length <= TITLE_LIMIT) firstLine else firstLine.take(TITLE_LIMIT - 1) + "…"
+    }
+
+    private companion object {
+        const val SESSION_PAGE_SIZE = 30
+        const val TITLE_LIMIT = 60
+    }
+}

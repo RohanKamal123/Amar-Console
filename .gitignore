@@ -1,0 +1,33 @@
+# Gradle / build
+.gradle/
+build/
+app/build/
+captures/
+.cxx/
+
+# Local machine configuration — contains sdk.dir, never commit
+local.properties
+
+# Secrets: never commit credential material of any kind
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+secrets.properties
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+google-services.json
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Test / tooling output
+/reports/
+/artifacts/
+*.log
