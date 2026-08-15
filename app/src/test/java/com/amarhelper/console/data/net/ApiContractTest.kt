@@ -6,9 +6,7 @@ import com.amarhelper.console.data.remote.opencode.CreateSessionRequest
 import com.amarhelper.console.data.remote.opencode.MessagePartDto
 import com.amarhelper.console.data.remote.opencode.OpenCodeApi
 import com.amarhelper.console.data.remote.opencode.SendMessageRequest
-import com.amarhelper.console.data.remote.openhands.CreateConversationRequest
-import com.amarhelper.console.data.remote.openhands.InitialMessage
-import com.amarhelper.console.data.remote.openhands.MessageContent
+import com.amarhelper.console.data.remote.openhands.InitSessionRequest
 import com.amarhelper.console.data.remote.openhands.OpenHandsApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.test.runTest
@@ -18,6 +16,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -56,90 +55,116 @@ class ApiContractTest {
     }
 
     @Test
-    fun `creating an OpenHands conversation posts the documented body to the documented path`() = runTest {
+    fun `creating a conversation posts initial_user_msg to the OSS route`() = runTest {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
-                """
-                {"id":"task-1","status":"WORKING","app_conversation_id":"conv-9",
-                 "sandbox_id":"sbx-2","created_at":"2025-01-15T10:30:00Z"}
-                """.trimIndent(),
+                """{"status":"ok","conversation_id":"fcd7010a","message":null,
+                    "conversation_status":"STARTING"}""",
             ),
         )
 
         val result = safeResponseCall {
             api<OpenHandsApi>().createConversation(
-                CreateConversationRequest(
-                    initialMessage = InitialMessage(listOf(MessageContent(text = "Build a REST API"))),
-                    selectedRepository = "acme/api",
-                ),
+                InitSessionRequest(initialUserMsg = "Build a REST API", repository = "acme/api"),
             )
         }
 
         val recorded = server.takeRequest()
-        assertEquals("/api/v1/app-conversations", recorded.path)
+        assertEquals("/api/conversations", recorded.path)
         assertEquals("POST", recorded.method)
         val body = recorded.body.readUtf8()
-        assertTrue(body.contains("\"initial_message\""))
-        assertTrue(body.contains("\"selected_repository\":\"acme/api\""))
-        assertTrue(body.contains("Build a REST API"))
+        assertTrue(body.contains("\"initial_user_msg\":\"Build a REST API\""))
+        assertTrue(body.contains("\"repository\":\"acme/api\""))
+        // The Cloud-only wrapper must not reappear.
+        assertFalse(body.contains("initial_message"))
 
-        val success = result as ApiResult.Success
-        assertEquals("conv-9", success.data.appConversationId)
-        assertEquals("sbx-2", success.data.sandboxId)
+        assertEquals("fcd7010a", (result as ApiResult.Success).data.conversationId)
     }
 
     @Test
-    fun `conversation search parses the paged response`() = runTest {
+    fun `the conversation list parses the OSS result set verbatim`() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"items":[{"id":"conv-9","title":"Auth API","sandbox_status":"RUNNING",
-                 "execution_status":"running","selected_repository":"acme/api",
-                 "created_at":"2025-01-15T10:30:00Z"}],"next_page_id":"p2"}
+                {"results":[{"conversation_id":"fcd7010a","title":"Auth API",
+                  "last_updated_at":"2026-08-15T01:00:00Z","status":"STOPPED",
+                  "runtime_status":null,"selected_repository":null,"selected_branch":"master",
+                  "git_provider":null,"trigger":"gui","num_connections":0,"url":null,
+                  "session_api_key":null,"created_at":"2026-08-14T22:00:00Z","pr_number":[]}],
+                 "next_page_id":null}
                 """.trimIndent(),
             ),
         )
 
-        val result = safeResponseCall { api<OpenHandsApi>().searchConversations(limit = 20) }
+        val result = safeResponseCall { api<OpenHandsApi>().conversations(limit = 30) }
 
-        assertEquals("/api/v1/app-conversations/search?limit=20", server.takeRequest().path)
+        assertEquals("/api/conversations?limit=30", server.takeRequest().path)
         val page = (result as ApiResult.Success).data
-        assertEquals(1, page.items.size)
-        assertEquals("Auth API", page.items.first().title)
-        assertEquals("running", page.items.first().executionStatus)
-        assertEquals("p2", page.nextPageId)
+        val conversation = page.results.single()
+        assertEquals("fcd7010a", conversation.conversationId)
+        assertEquals("STOPPED", conversation.status)
+        assertEquals("master", conversation.selectedBranch)
+        assertEquals("gui", conversation.trigger)
+        assertEquals(0, conversation.numConnections)
+        assertEquals(null, page.nextPageId)
     }
 
     @Test
-    fun `unknown fields in a response do not break parsing`() = runTest {
+    fun `the SPA shell served by the catch-all is reported as malformed`() = runTest {
+        // The OSS server answers an unknown path with its frontend and HTTP 200 rather
+        // than a 404 — the failure that hid the wrong contract in the first place.
         server.enqueue(
-            MockResponse().setBody(
-                """{"items":[{"id":"c1","title":"x","brand_new_field":{"nested":true}}]}""",
-            ),
+            MockResponse().setHeader("Content-Type", "text/html")
+                .setBody("<!DOCTYPE html><html><head><title>OpenHands</title></head></html>"),
         )
 
-        val result = safeResponseCall { api<OpenHandsApi>().searchConversations() }
-
-        assertTrue(result is ApiResult.Success)
-        assertEquals("c1", (result as ApiResult.Success).data.items.first().id)
-    }
-
-    @Test
-    fun `an HTML error page is reported as malformed rather than crashing`() = runTest {
-        server.enqueue(MockResponse().setBody("<html><body>502 Bad Gateway</body></html>"))
-
-        val result = safeResponseCall { api<OpenHandsApi>().searchConversations() }
+        val result = safeResponseCall { api<OpenHandsApi>().conversations() }
 
         assertTrue((result as ApiResult.Failure).error is AppError.Malformed)
     }
 
     @Test
-    fun `401 from OpenHands becomes an unauthorized error`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"detail":"invalid key"}"""))
+    fun `options config is JSON and identifies a self-hosted deployment`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"APP_MODE":"oss","GITHUB_CLIENT_ID":"","POSTHOG_CLIENT_KEY":"phc_x",
+                    "FEATURE_FLAGS":{"ENABLE_BILLING":false,"HIDE_LLM_SETTINGS":false}}""",
+            ),
+        )
 
-        val result = safeResponseCall { api<OpenHandsApi>().searchConversations() }
+        val result = safeResponseCall { api<OpenHandsApi>().optionsConfig() }
 
-        assertTrue((result as ApiResult.Failure).error is AppError.Unauthorized)
+        assertEquals("/api/options/config", server.takeRequest().path)
+        assertEquals("oss", (result as ApiResult.Success).data.appMode)
+    }
+
+    @Test
+    fun `stopping and deleting a conversation use the OSS routes`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        safeResponseCall { api<OpenHandsApi>().stopConversation("fcd7010a") }
+        safeResponseCall { api<OpenHandsApi>().deleteConversation("fcd7010a") }
+
+        val stop = server.takeRequest()
+        assertEquals("POST", stop.method)
+        assertEquals("/api/conversations/fcd7010a/stop", stop.path)
+        val delete = server.takeRequest()
+        assertEquals("DELETE", delete.method)
+        assertEquals("/api/conversations/fcd7010a", delete.path)
+    }
+
+    @Test
+    fun `the event transcript is requested within the server's limit cap`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"events":[],"has_more":false}"""))
+
+        safeResponseCall { api<OpenHandsApi>().events("fcd7010a") }
+
+        val path = server.takeRequest().path.orEmpty()
+        assertTrue(path.startsWith("/api/conversations/fcd7010a/events"))
+        // The server rejects limit > 100 with a 400, so the client must never exceed it.
+        val limit = Regex("limit=(\\d+)").find(path)!!.groupValues[1].toInt()
+        assertTrue("limit was $limit", limit in 1..100)
     }
 
     @Test
@@ -198,7 +223,7 @@ class ApiContractTest {
     fun `an empty body on a 200 is reported rather than silently succeeding`() = runTest {
         server.enqueue(MockResponse().setResponseCode(204))
 
-        val result = safeResponseCall { api<OpenHandsApi>().searchConversations() }
+        val result = safeResponseCall { api<OpenHandsApi>().conversations() }
 
         assertTrue((result as ApiResult.Failure).error is AppError.Malformed)
     }

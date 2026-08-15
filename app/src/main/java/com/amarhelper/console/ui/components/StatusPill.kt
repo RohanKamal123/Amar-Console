@@ -79,6 +79,7 @@ fun TaskStatePill(state: TaskState, modifier: Modifier = Modifier, dark: Boolean
         TaskState.RUNNING -> Triple(Icons.Filled.Bolt, amberContainer(dark), amberContent(dark))
         TaskState.WAITING -> Triple(Icons.Filled.HourglassEmpty, amberContainer(dark), amberContent(dark))
         TaskState.COMPLETED -> Triple(Icons.Filled.CheckCircle, emeraldContainer(dark), emeraldContent(dark))
+        TaskState.STOPPED -> Triple(Icons.Filled.RemoveCircleOutline, slateContainer(dark), slateContent(dark))
         TaskState.FAILED -> Triple(Icons.Filled.ErrorOutline, roseContainer(dark), roseContent(dark))
         TaskState.CANCELLED -> Triple(Icons.Filled.RemoveCircleOutline, slateContainer(dark), slateContent(dark))
         TaskState.UNKNOWN -> Triple(Icons.AutoMirrored.Filled.HelpOutline, slateContainer(dark), slateContent(dark))

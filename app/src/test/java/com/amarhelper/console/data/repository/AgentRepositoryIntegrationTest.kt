@@ -9,6 +9,7 @@ import com.amarhelper.console.data.net.ApiClientFactory
 import com.amarhelper.console.data.remote.opencode.OpenCodeEventStream
 import com.amarhelper.console.data.security.SecureCredentialStore
 import com.amarhelper.console.domain.model.AgentProvider
+import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.TaskState
 import com.amarhelper.console.domain.model.TaskSubmission
 import kotlinx.coroutines.test.runTest
@@ -17,6 +18,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -70,6 +72,25 @@ class AgentRepositoryIntegrationTest {
     }
 
     @Test
+    fun `submitting to OpenHands posts initial_user_msg and returns the conversation`() = runTest {
+        useOpenHands()
+        server.enqueue(
+            MockResponse().setBody("""{"status":"ok","conversation_id":"conv_9","conversation_status":"STARTING"}"""),
+        )
+
+        val result = repository.submitTask(
+            TaskSubmission("Build a REST API for user authentication.", AgentProvider.OPEN_HANDS),
+        )
+
+        val session = (result as ApiResult.Success).data
+        assertEquals("conv_9", session.id)
+        assertEquals(TaskState.QUEUED, session.state)
+        val recorded = server.takeRequest()
+        assertEquals("/api/conversations", recorded.path)
+        assertTrue(recorded.body.readUtf8().contains("initial_user_msg"))
+    }
+
+    @Test
     fun `submitting to OpenCode creates a session then posts the prompt`() = runTest {
         useOpenCode()
         server.enqueue(MockResponse().setBody("""{"id":"ses_1","title":"Auth","time":{"created":1736937000}}"""))
@@ -110,11 +131,11 @@ class AgentRepositoryIntegrationTest {
     fun `sessions from both providers are merged and sorted by recency`() = runTest {
         useOpenCode()
         useOpenHands()
-        // OpenHands search, then OpenCode list — order follows the repository's calls.
+        // OpenHands list, then OpenCode list — order follows the repository's calls.
         server.enqueue(
             MockResponse().setBody(
-                """{"items":[{"id":"conv_1","title":"Older","execution_status":"finished",
-                   "created_at":"2025-01-15T10:00:00Z","updated_at":"2025-01-15T10:05:00Z"}]}""",
+                """{"results":[{"conversation_id":"conv_1","title":"Older","status":"STOPPED",
+                   "created_at":"2025-01-15T10:00:00Z","last_updated_at":"2025-01-15T10:05:00Z"}]}""",
             ),
         )
         server.enqueue(
@@ -125,7 +146,7 @@ class AgentRepositoryIntegrationTest {
 
         assertEquals(2, sessions.size)
         assertEquals("Newer", sessions.first().title)
-        assertEquals(TaskState.COMPLETED, sessions.last().state)
+        assertEquals(TaskState.STOPPED, sessions.last().state)
     }
 
     @Test
@@ -173,20 +194,74 @@ class AgentRepositoryIntegrationTest {
     }
 
     @Test
-    fun `OpenHands transcript replay is reported as unsupported not faked`() = runTest {
+    fun `the OpenHands transcript maps sources and actions onto console lines`() = runTest {
         useOpenHands()
+        server.enqueue(
+            MockResponse().setBody(
+                """{"events":[
+                     {"id":0,"timestamp":"2026-08-15T01:00:00Z","source":"user","message":"Build it"},
+                     {"id":1,"timestamp":"2026-08-15T01:00:05Z","source":"agent","action":"run",
+                      "message":"Running tests"},
+                     {"id":2,"timestamp":"2026-08-15T01:00:09Z","source":"agent","observation":"error",
+                      "message":"command failed"},
+                     {"id":3,"timestamp":"2026-08-15T01:00:12Z","source":"environment","message":"Runtime ready"}
+                   ],"has_more":false}""",
+            ),
+        )
 
-        val result = repository.history(AgentProvider.OPEN_HANDS, "conv_1")
+        val events = (repository.history(AgentProvider.OPEN_HANDS, "conv_1") as ApiResult.Success).data
 
-        assertTrue((result as ApiResult.Failure).error is AppError.Unsupported)
-        assertEquals(0, server.requestCount)
+        assertEquals(4, events.size)
+        assertEquals(ConsoleEvent.Kind.USER, events[0].kind)
+        assertEquals(ConsoleEvent.Kind.TOOL, events[1].kind)
+        assertEquals(ConsoleEvent.Kind.ERROR, events[2].kind)
+        assertEquals(ConsoleEvent.Kind.SYSTEM, events[3].kind)
+        assertTrue(server.takeRequest().path!!.startsWith("/api/conversations/conv_1/events"))
     }
 
     @Test
-    fun `cancelling is reported as unsupported on both providers`() = runTest {
+    fun `cancelling an OpenHands task stops the conversation`() = runTest {
+        useOpenHands()
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val result = repository.cancel(AgentProvider.OPEN_HANDS, "conv_1")
+
+        assertTrue(result is ApiResult.Success)
+        assertEquals("/api/conversations/conv_1/stop", server.takeRequest().path)
+    }
+
+    @Test
+    fun `cancelling remains unsupported on OpenCode, whose API has no abort route`() = runTest {
         useOpenCode()
         assertTrue((repository.cancel(AgentProvider.OPEN_CODE, "ses_1") as ApiResult.Failure).error is AppError.Unsupported)
-        assertTrue((repository.cancel(AgentProvider.OPEN_HANDS, "c") as ApiResult.Failure).error is AppError.Unsupported)
+    }
+
+    @Test
+    fun `deleting an OpenHands conversation calls the OSS route`() = runTest {
+        useOpenHands()
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val result = repository.deleteSession(AgentProvider.OPEN_HANDS, "conv_1")
+
+        assertTrue(result is ApiResult.Success)
+        val recorded = server.takeRequest()
+        assertEquals("DELETE", recorded.method)
+        assertEquals("/api/conversations/conv_1", recorded.path)
+    }
+
+    @Test
+    fun `a session api key returned by the server never reaches the domain model`() = runTest {
+        useOpenHands()
+        server.enqueue(
+            MockResponse().setBody(
+                """{"results":[{"conversation_id":"c1","title":"T","status":"RUNNING",
+                   "session_api_key":"super-secret-session-key"}]}""",
+            ),
+        )
+
+        val session = (repository.listSessions() as ApiResult.Success).data.single()
+
+        assertFalse(session.toString().contains("super-secret-session-key"))
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.amarhelper.console.data.net.ApiClientFactory
 import com.amarhelper.console.data.net.safeResponseCall
 import com.amarhelper.console.data.remote.gateway.GatewayApi
 import com.amarhelper.console.data.remote.litellm.LiteLlmApi
+import com.amarhelper.console.data.remote.litellm.LiteLlmHealth
 import com.amarhelper.console.data.remote.opencode.OpenCodeApi
 import com.amarhelper.console.data.remote.openhands.OpenHandsApi
 import com.amarhelper.console.domain.model.DependencyHealth
@@ -78,8 +79,9 @@ class DefaultServiceHealthRepository @Inject constructor(
             }
             ServiceId.LITE_LLM -> {
                 val api = clientFactory.create(service, url, LiteLlmApi::class.java)
-                when (val r = safeResponseCall { api.readiness() }) {
-                    is ApiResult.Success -> ApiResult.Success(r.data.version)
+                val path = configStore.current().liteLlmHealthPath
+                when (val r = safeResponseCall { api.probe("$url/$path") }) {
+                    is ApiResult.Success -> ApiResult.Success(LiteLlmHealth.version(r.data))
                     is ApiResult.Failure -> r
                 }
             }
@@ -91,11 +93,12 @@ class DefaultServiceHealthRepository @Inject constructor(
                 }
             }
             ServiceId.OPEN_HANDS -> {
-                // OpenHands publishes no unauthenticated health route, so the lightest
-                // documented call doubles as the probe.
+                // /api/options/config is unauthenticated on a self-hosted server and
+                // returns JSON, so a wrong host answering with the frontend's HTML shell
+                // is caught here rather than surfacing later as a parse failure.
                 val api = clientFactory.create(service, url, OpenHandsApi::class.java)
-                when (val r = safeResponseCall { api.searchConversations(limit = 1) }) {
-                    is ApiResult.Success -> ApiResult.Success(null)
+                when (val r = safeResponseCall { api.optionsConfig() }) {
+                    is ApiResult.Success -> ApiResult.Success(r.data.appMode?.let { "mode: $it" })
                     is ApiResult.Failure -> r
                 }
             }

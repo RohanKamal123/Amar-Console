@@ -60,6 +60,13 @@ it is held to that standard: it is the only writer of service URLs (Settings →
 `saveUrl` → `ConfigStore`), and its rules are covered by unit tests including the
 addresses immediately outside the tailnet range.
 
+## Credentials the server volunteers
+
+`ConversationInfo` from a self-hosted OpenHands server contains a `session_api_key`
+field. It is parsed (so the DTO matches the wire format exactly) but deliberately never
+copied into the domain model, never persisted and never rendered — a regression test
+asserts that a session key present in a response cannot appear in an `AgentSession`.
+
 ## Logging
 
 * `AppLogger` compiles DEBUG/INFO out of release builds via `BuildConfig.VERBOSE_LOGGING`.

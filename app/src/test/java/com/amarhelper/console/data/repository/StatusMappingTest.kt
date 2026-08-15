@@ -9,34 +9,38 @@ import org.junit.Test
 class StatusMappingTest {
 
     @Test
-    fun `openhands execution statuses map onto the shared vocabulary`() {
-        assertEquals(TaskState.RUNNING, StatusMapping.fromOpenHands("running", "RUNNING"))
-        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands("idle", "RUNNING"))
-        assertEquals(TaskState.WAITING, StatusMapping.fromOpenHands("waiting_for_confirmation", "RUNNING"))
-        assertEquals(TaskState.WAITING, StatusMapping.fromOpenHands("paused", "PAUSED"))
-        assertEquals(TaskState.COMPLETED, StatusMapping.fromOpenHands("finished", "RUNNING"))
-        assertEquals(TaskState.FAILED, StatusMapping.fromOpenHands("error", "RUNNING"))
-        assertEquals(TaskState.FAILED, StatusMapping.fromOpenHands("stuck", "RUNNING"))
+    fun `self-hosted conversation statuses map onto the shared vocabulary`() {
+        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands("STARTING", null))
+        assertEquals(TaskState.RUNNING, StatusMapping.fromOpenHands("RUNNING", "STATUS\$READY"))
+        assertEquals(TaskState.CANCELLED, StatusMapping.fromOpenHands("ARCHIVED", null))
     }
 
     @Test
-    fun `sandbox status is the fallback when execution status is absent`() {
-        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands(null, "STARTING"))
-        assertEquals(TaskState.RUNNING, StatusMapping.fromOpenHands(null, "RUNNING"))
-        assertEquals(TaskState.FAILED, StatusMapping.fromOpenHands(null, "ERROR"))
-        assertEquals(TaskState.FAILED, StatusMapping.fromOpenHands(null, "MISSING"))
-        assertEquals(TaskState.UNKNOWN, StatusMapping.fromOpenHands(null, null))
+    fun `STOPPED is not reported as success`() {
+        // The server says only that the conversation is not running. Claiming the task
+        // completed would be an invention.
+        assertEquals(TaskState.STOPPED, StatusMapping.fromOpenHands("STOPPED", null))
+        assertTrue(TaskState.STOPPED.isTerminal)
     }
 
     @Test
-    fun `start-response statuses are mapped so a new task is never UNKNOWN`() {
-        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands(null, "WORKING"))
-        assertEquals(TaskState.RUNNING, StatusMapping.fromOpenHands(null, "READY"))
+    fun `a failed runtime beats a conversation that still claims to be running`() {
+        assertEquals(TaskState.FAILED, StatusMapping.fromOpenHands("RUNNING", "STATUS\$ERROR"))
+        assertEquals(
+            TaskState.FAILED,
+            StatusMapping.fromOpenHands("RUNNING", "STATUS\$ERROR_LLM_OUT_OF_CREDITS"),
+        )
+        assertEquals(
+            TaskState.FAILED,
+            StatusMapping.fromOpenHands("RUNNING", "STATUS\$ERROR_RUNTIME_DISCONNECTED"),
+        )
     }
 
     @Test
-    fun `an unrecognised status is unknown rather than a guess`() {
-        assertEquals(TaskState.UNKNOWN, StatusMapping.fromOpenHands("teleporting", "WARP"))
+    fun `a runtime that is still booting is queued rather than running`() {
+        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands("RUNNING", "STATUS\$BUILDING_RUNTIME"))
+        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands("RUNNING", "STATUS\$STARTING_RUNTIME"))
+        assertEquals(TaskState.QUEUED, StatusMapping.fromOpenHands("RUNNING", "STATUS\$SETTING_UP_WORKSPACE"))
     }
 
     @Test

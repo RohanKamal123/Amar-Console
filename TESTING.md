@@ -29,11 +29,13 @@ handle (401/403/404/408/409/429/500/502/503/504), transport failures (DNS, refus
 timeout, generic IO), and that cancellation is not reported as a backend failure.
 
 **Wire contracts.** `ApiContractTest` runs the real Retrofit interfaces against
-MockWebServer with fixtures shaped like the published API examples: it asserts the
-request path and body for conversation creation and prompt submission, parses paged
-search responses and message envelopes, and checks the degenerate cases — unknown fields
-ignored, an HTML error page reported as `Malformed` rather than crashing, an empty 200
-body reported rather than silently succeeding.
+MockWebServer with fixtures copied from live responses: it asserts the request path and
+body for conversation creation (`initial_user_msg`, and that the Cloud-only
+`initial_message` wrapper cannot reappear), parses the OSS `results` set field for field,
+and covers the degenerate cases — unknown fields ignored, an empty 200 body reported, and
+**the SPA shell the OSS server returns from its catch-all route reported as `Malformed`**
+rather than silently parsed. That last one is the failure mode that hid a wrong API
+contract behind an HTTP 200.
 
 **Streaming.** `OpenCodeEventStreamTest` drives the SSE parser over a real socket:
 text and tool parts become console lines, frames for other sessions are dropped, an
@@ -153,6 +155,10 @@ The JVM suite — 88 tests across 12 classes — passes, plus the opt-in live wo
 | SessionsViewModelTest | 4 |
 | SplashViewModelTest | 4 |
 | LiveBackendWorkflowTest | 1 (opt-in) |
+
+The mock backend reproduces the self-hosted OpenHands shape, including the catch-all that
+answers unknown paths with the frontend, so the live workflow exercises the same
+responses a real server sends.
 
 Two production bugs were found by these tests and fixed: `safeResponseCall` treated a
 `204 No Content` as a malformed response (breaking OpenCode prompt submission), and the

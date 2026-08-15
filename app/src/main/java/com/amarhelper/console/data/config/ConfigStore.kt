@@ -33,6 +33,7 @@ class ConfigStore @Inject constructor(
         val LITE_LLM_URL = stringPreferencesKey("lite_llm_url")
         val GATEWAY_URL = stringPreferencesKey("gateway_url")
         val POLL_INTERVAL = intPreferencesKey("poll_interval_seconds")
+        val LITELLM_HEALTH_PATH = stringPreferencesKey("litellm_health_path")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val VERBOSE_LOGGING = booleanPreferencesKey("verbose_network_logging")
     }
@@ -51,6 +52,8 @@ class ConfigStore @Inject constructor(
                 liteLlmUrl = prefs[Keys.LITE_LLM_URL].orEmpty(),
                 gatewayUrl = prefs[Keys.GATEWAY_URL].orEmpty(),
                 pollIntervalSeconds = prefs[Keys.POLL_INTERVAL] ?: AppConfig.DEFAULT_POLL_SECONDS,
+                liteLlmHealthPath = prefs[Keys.LITELLM_HEALTH_PATH]?.takeIf { it.isNotBlank() }
+                    ?: AppConfig.DEFAULT_LITELLM_HEALTH_PATH,
                 themeMode = prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                     ?: ThemeMode.SYSTEM,
                 verboseNetworkLogging = prefs[Keys.VERBOSE_LOGGING] ?: false,
@@ -76,6 +79,11 @@ class ConfigStore @Inject constructor(
     suspend fun setPollInterval(seconds: Int) {
         val clamped = seconds.coerceIn(AppConfig.MIN_POLL_SECONDS, AppConfig.MAX_POLL_SECONDS)
         context.configDataStore.edit { it[Keys.POLL_INTERVAL] = clamped }
+    }
+
+    suspend fun setLiteLlmHealthPath(path: String) {
+        val cleaned = path.trim().trim('/').ifBlank { AppConfig.DEFAULT_LITELLM_HEALTH_PATH }
+        context.configDataStore.edit { it[Keys.LITELLM_HEALTH_PATH] = cleaned }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {

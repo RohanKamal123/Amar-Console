@@ -182,6 +182,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { configStore.setThemeMode(mode) }
     }
 
+    fun setLiteLlmHealthPath(path: String) {
+        viewModelScope.launch {
+            configStore.setLiteLlmHealthPath(path)
+            clientFactory.invalidate()
+            local.update { it.copy(notice = "LiteLLM health path saved.") }
+        }
+    }
+
     fun setPollInterval(seconds: Int) {
         viewModelScope.launch { configStore.setPollInterval(seconds) }
     }

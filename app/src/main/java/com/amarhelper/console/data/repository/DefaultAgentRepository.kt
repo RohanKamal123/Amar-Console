@@ -11,9 +11,7 @@ import com.amarhelper.console.data.remote.opencode.MessagePartDto
 import com.amarhelper.console.data.remote.opencode.OpenCodeApi
 import com.amarhelper.console.data.remote.opencode.OpenCodeEventStream
 import com.amarhelper.console.data.remote.opencode.SendMessageRequest
-import com.amarhelper.console.data.remote.openhands.CreateConversationRequest
-import com.amarhelper.console.data.remote.openhands.InitialMessage
-import com.amarhelper.console.data.remote.openhands.MessageContent
+import com.amarhelper.console.data.remote.openhands.InitSessionRequest
 import com.amarhelper.console.data.remote.openhands.OpenHandsApi
 import com.amarhelper.console.domain.model.AgentProvider
 import com.amarhelper.console.domain.model.AgentSession
@@ -68,24 +66,23 @@ class DefaultAgentRepository @Inject constructor(
 
     private suspend fun submitToOpenHands(submission: TaskSubmission): ApiResult<AgentSession> {
         val api = openHands() ?: return ApiResult.Failure(AppError.NotConfigured("OpenHands"))
-        val request = CreateConversationRequest(
-            initialMessage = InitialMessage(listOf(MessageContent(text = submission.prompt))),
-            selectedRepository = submission.repository?.takeIf { it.isNotBlank() },
+        val request = InitSessionRequest(
+            initialUserMsg = submission.prompt,
+            repository = submission.repository?.takeIf { it.isNotBlank() },
         )
         return when (val result = safeResponseCall { api.createConversation(request) }) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> {
                 val dto = result.data
-                val id = dto.appConversationId ?: dto.id
+                val id = dto.conversationId
                     ?: return ApiResult.Failure(AppError.Malformed("OpenHands did not return a conversation id."))
                 ApiResult.Success(
                     AgentSession(
                         id = id,
                         provider = AgentProvider.OPEN_HANDS,
                         title = submission.prompt.toTitle(),
-                        state = StatusMapping.fromOpenHands(null, dto.status),
-                        createdAtEpochMillis = StatusMapping.parseIsoTimestamp(dto.createdAt)
-                            ?: System.currentTimeMillis(),
+                        state = StatusMapping.fromOpenHands(dto.conversationStatus ?: dto.status, null),
+                        createdAtEpochMillis = System.currentTimeMillis(),
                         lastActivityEpochMillis = System.currentTimeMillis(),
                         repository = submission.repository,
                     ),
@@ -127,8 +124,8 @@ class DefaultAgentRepository @Inject constructor(
         var lastError: AppError? = null
 
         openHands()?.let { api ->
-            when (val result = safeResponseCall { api.searchConversations(limit = SESSION_PAGE_SIZE) }) {
-                is ApiResult.Success -> result.data.items.forEach { sessions += it.toDomain() }
+            when (val result = safeResponseCall { api.conversations(limit = SESSION_PAGE_SIZE) }) {
+                is ApiResult.Success -> result.data.results.forEach { sessions += it.toDomain() }
                 is ApiResult.Failure -> lastError = result.error
             }
         }
@@ -167,11 +164,9 @@ class DefaultAgentRepository @Inject constructor(
             if (api == null) {
                 ApiResult.Failure(AppError.NotConfigured("OpenHands"))
             } else {
-                when (val result = safeResponseCall { api.conversationsByIds(id) }) {
+                when (val result = safeResponseCall { api.conversation(id) }) {
                     is ApiResult.Failure -> result
-                    is ApiResult.Success -> result.data.firstOrNull()?.toDomain()
-                        ?.let { ApiResult.Success(it) }
-                        ?: ApiResult.Failure(AppError.NotFound("That conversation no longer exists."))
+                    is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
                 }
             }
         }
@@ -199,9 +194,20 @@ class DefaultAgentRepository @Inject constructor(
 
     override suspend fun history(provider: AgentProvider, sessionId: String): ApiResult<List<ConsoleEvent>> =
         when (provider) {
-            // The published OpenHands v1 contract exposes conversation status, not a
-            // per-event transcript. Reported as unsupported rather than faked.
-            AgentProvider.OPEN_HANDS -> ApiResult.Failure(AppError.Unsupported("Transcript replay for OpenHands"))
+            AgentProvider.OPEN_HANDS -> {
+                val api = openHands()
+                if (api == null) {
+                    ApiResult.Failure(AppError.NotConfigured("OpenHands"))
+                } else {
+                    // The server caps `limit` at 100 and rejects anything larger with 400.
+                    when (val result = safeResponseCall { api.events(sessionId, limit = EVENT_PAGE_SIZE) }) {
+                        is ApiResult.Failure -> result
+                        is ApiResult.Success -> ApiResult.Success(
+                            result.data.events.mapNotNull { it.toConsoleEvent() },
+                        )
+                    }
+                }
+            }
             AgentProvider.OPEN_CODE -> {
                 val api = openCode()
                 if (api == null) {
@@ -247,9 +253,22 @@ class DefaultAgentRepository @Inject constructor(
 
     override fun supportsStreaming(provider: AgentProvider): Boolean = provider == AgentProvider.OPEN_CODE
 
-    override suspend fun cancel(provider: AgentProvider, sessionId: String): ApiResult<Unit> =
-        // Neither published contract documents an "abort current turn" route.
-        ApiResult.Failure(AppError.Unsupported("Cancelling a running task"))
+    override suspend fun cancel(provider: AgentProvider, sessionId: String): ApiResult<Unit> = when (provider) {
+        AgentProvider.OPEN_HANDS -> {
+            val api = openHands()
+            if (api == null) {
+                ApiResult.Failure(AppError.NotConfigured("OpenHands"))
+            } else {
+                when (val result = safeResponseCall { api.stopConversation(sessionId) }) {
+                    is ApiResult.Failure -> result
+                    is ApiResult.Success -> ApiResult.Success(Unit)
+                }
+            }
+        }
+        // OpenCode's published API has no abort route; deleting the session is the only
+        // way to end a run, and that is offered separately.
+        AgentProvider.OPEN_CODE -> ApiResult.Failure(AppError.Unsupported("Cancelling a running OpenCode task"))
+    }
 
     override suspend fun deleteSession(provider: AgentProvider, sessionId: String): ApiResult<Unit> = when (provider) {
         AgentProvider.OPEN_CODE -> {
@@ -263,19 +282,64 @@ class DefaultAgentRepository @Inject constructor(
                 }
             }
         }
-        AgentProvider.OPEN_HANDS -> ApiResult.Failure(AppError.Unsupported("Deleting an OpenHands conversation"))
+        AgentProvider.OPEN_HANDS -> {
+            val api = openHands()
+            if (api == null) {
+                ApiResult.Failure(AppError.NotConfigured("OpenHands"))
+            } else {
+                when (val result = safeResponseCall { api.deleteConversation(sessionId) }) {
+                    is ApiResult.Failure -> result
+                    is ApiResult.Success -> ApiResult.Success(Unit)
+                }
+            }
+        }
     }
 
     private fun com.amarhelper.console.data.remote.openhands.ConversationDto.toDomain() = AgentSession(
-        id = id,
+        id = conversationId,
         provider = AgentProvider.OPEN_HANDS,
         title = title.orEmpty().ifBlank { "Untitled conversation" },
-        state = StatusMapping.fromOpenHands(executionStatus, sandboxStatus),
+        state = StatusMapping.fromOpenHands(status, runtimeStatus),
         createdAtEpochMillis = StatusMapping.parseIsoTimestamp(createdAt),
-        lastActivityEpochMillis = StatusMapping.parseIsoTimestamp(updatedAt ?: createdAt),
+        lastActivityEpochMillis = StatusMapping.parseIsoTimestamp(lastUpdatedAt ?: createdAt),
         repository = selectedRepository,
-        detail = sandboxStatus?.lowercase(),
+        // session_api_key is deliberately not carried into the domain model.
+        detail = runtimeStatus?.substringAfter('$')?.lowercase()?.replace('_', ' '),
     )
+
+    /**
+     * One OpenHands event → one console line.
+     *
+     * Events are heterogeneous (actions, observations, messages), so they arrive as raw
+     * JSON objects and only the keys the server guarantees are read.
+     */
+    private fun kotlinx.serialization.json.JsonObject.toConsoleEvent(): ConsoleEvent? {
+        fun str(key: String): String? =
+            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString || key == "id" }?.content
+
+        val source = str("source")
+        val action = str("action")
+        val observation = str("observation")
+        val text = str("message")?.takeIf { it.isNotBlank() }
+            ?: action?.let { "$it()" }
+            ?: observation?.let { "$it observed" }
+            ?: return null
+
+        val kind = when {
+            observation == "error" -> ConsoleEvent.Kind.ERROR
+            source == "user" -> ConsoleEvent.Kind.USER
+            source == "environment" -> ConsoleEvent.Kind.SYSTEM
+            action != null && action != "message" -> ConsoleEvent.Kind.TOOL
+            else -> ConsoleEvent.Kind.AGENT
+        }
+
+        return ConsoleEvent(
+            id = str("id") ?: text.hashCode().toString(),
+            kind = kind,
+            text = text,
+            timestampEpochMillis = StatusMapping.parseIsoTimestamp(str("timestamp")),
+        )
+    }
 
     private fun String.toTitle(): String {
         val firstLine = trim().lineSequence().firstOrNull().orEmpty()
@@ -284,6 +348,7 @@ class DefaultAgentRepository @Inject constructor(
 
     private companion object {
         const val SESSION_PAGE_SIZE = 30
+        const val EVENT_PAGE_SIZE = 100
         const val TITLE_LIMIT = 60
     }
 }

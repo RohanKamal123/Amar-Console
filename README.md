@@ -56,9 +56,9 @@ the services you actually use.
 
 | Service | Typical URL | Notes |
 | --- | --- | --- |
-| OpenHands | `https://openhands.your-tailnet.ts.net` | Bearer token if your deployment requires one |
+| OpenHands | `http://box.your-tailnet.ts.net:3000` | Self-hosted OSS. Bearer token only if your deployment adds auth |
 | OpenCode | `http://box.your-tailnet.ts.net:4096` | started with `opencode serve` |
-| LiteLLM | `https://litellm.your-tailnet.ts.net` | health probes only; the app never sends your master key |
+| LiteLLM | `http://box.your-tailnet.ts.net:4000` | Health probe only; the app never sends your master key. The probed path is configurable in Settings, since deployments often run a custom router in place of the upstream proxy |
 | Gateway / API | `https://gw.your-tailnet.ts.net` | optional; supplies PostgreSQL and Redis health |
 
 **Network topology.** The app is built for VPN-only access (Tailscale or WireGuard).
@@ -119,10 +119,11 @@ credential scan on every push. No workflow depends on private credentials.
 
 ## Status and limitations
 
-* Cancelling a running task, replaying an OpenHands transcript, and deleting an
-  OpenHands conversation are **not supported by the published provider APIs**. The app
-  says so where you would expect those actions, rather than pretending they worked.
+* Cancelling a running **OpenCode** task is not supported by its published API; the app
+  says so rather than pretending it worked. Deleting the session is offered instead.
 * OpenHands sessions are polled for status; OpenCode sessions stream live output.
+* This client targets **self-hosted OSS OpenHands**, not OpenHands Cloud — the two
+  expose different APIs. See ARCHITECTURE.md, "Which OpenHands".
 * Push notifications are not implemented.
 * The instrumented UI suite has not been executed in this project's development
   environment (no KVM for an emulator); it runs in CI.

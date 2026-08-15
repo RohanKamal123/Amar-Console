@@ -34,6 +34,12 @@ data class AppConfig(
     val liteLlmUrl: String = "",
     val gatewayUrl: String = "",
     val pollIntervalSeconds: Int = DEFAULT_POLL_SECONDS,
+    /**
+     * Path probed on the LiteLLM host. Configurable because deployments often run a
+     * custom router in place of the upstream proxy, which need not serve the documented
+     * health route.
+     */
+    val liteLlmHealthPath: String = DEFAULT_LITELLM_HEALTH_PATH,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val verboseNetworkLogging: Boolean = false,
 ) {
@@ -52,6 +58,7 @@ data class AppConfig(
 
     companion object {
         const val DEFAULT_POLL_SECONDS = 5
+        const val DEFAULT_LITELLM_HEALTH_PATH = "health/readiness"
         const val MIN_POLL_SECONDS = 2
         const val MAX_POLL_SECONDS = 60
     }
