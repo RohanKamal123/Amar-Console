@@ -30,24 +30,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amarhelper.console.R
 import com.amarhelper.console.domain.model.AgentProvider
-import com.amarhelper.console.domain.model.ConsoleEvent
+import com.amarhelper.console.ui.chat.ChatEntryView
 import com.amarhelper.console.ui.components.EmptyState
 import com.amarhelper.console.ui.components.ErrorState
 import com.amarhelper.console.ui.components.LoadingState
 import com.amarhelper.console.ui.components.MinTouchTarget
 import com.amarhelper.console.ui.components.TaskStatePill
-import com.amarhelper.console.ui.components.clockTime
-import com.amarhelper.console.ui.theme.Amber400
-import com.amarhelper.console.ui.theme.Azure300
-import com.amarhelper.console.ui.theme.ConsoleTextStyle
-import com.amarhelper.console.ui.theme.Rose400
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +52,7 @@ fun SessionConsoleScreen(
     viewModel: SessionConsoleViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val transcript = state.transcript
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -67,10 +62,10 @@ fun SessionConsoleScreen(
 
     // Follow the tail only while the user is already near it, so scrolling back through
     // output is not yanked away by new lines.
-    LaunchedEffect(state.events.size) {
+    LaunchedEffect(transcript.size) {
         val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-        if (state.events.isNotEmpty() && lastVisible >= state.events.size - 3) {
-            listState.animateScrollToItem(state.events.lastIndex.coerceAtLeast(0))
+        if (transcript.isNotEmpty() && lastVisible >= transcript.size - 3) {
+            listState.animateScrollToItem(transcript.lastIndex.coerceAtLeast(0))
         }
     }
 
@@ -141,7 +136,7 @@ fun SessionConsoleScreen(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     if (state.droppedLines > 0) {
                         item(key = "dropped") {
@@ -152,8 +147,8 @@ fun SessionConsoleScreen(
                             )
                         }
                     }
-                    items(state.events, key = { it.id }) { event ->
-                        ConsoleLine(event)
+                    items(transcript, key = { it.id }) { entry ->
+                        ChatEntryView(entry)
                     }
                 }
             }
@@ -172,7 +167,7 @@ private fun ConsoleStatusBar(state: ConsoleUiState) {
     ) {
         TaskStatePill(state.state)
         Text(
-            text = when (state.connection) {
+            text = state.agentState?.let { "Agent: ${it.replace('_', ' ')}" } ?: when (state.connection) {
                 ConnectionState.CONNECTING -> "Connecting…"
                 ConnectionState.LIVE -> "Streaming"
                 ConnectionState.POLLING -> "Polling status"
@@ -185,43 +180,10 @@ private fun ConsoleStatusBar(state: ConsoleUiState) {
         )
         if (state.events.isNotEmpty()) {
             Text(
-                text = "${state.events.size} lines",
+                text = "${state.events.size} events",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
-
-@Composable
-private fun ConsoleLine(event: ConsoleEvent) {
-    val (label, color) = when (event.kind) {
-        ConsoleEvent.Kind.USER -> "you" to MaterialTheme.colorScheme.primary
-        ConsoleEvent.Kind.AGENT -> "agent" to MaterialTheme.colorScheme.onSurface
-        ConsoleEvent.Kind.TOOL -> "tool" to Azure300
-        ConsoleEvent.Kind.SYSTEM -> "sys" to Amber400
-        ConsoleEvent.Kind.ERROR -> "err" to Rose400
-    }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = clockTime(event.timestampEpochMillis),
-                style = ConsoleTextStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = label,
-                style = ConsoleTextStyle,
-                fontWeight = FontWeight.Bold,
-                color = color,
-            )
-        }
-        Text(
-            text = event.text,
-            style = ConsoleTextStyle,
-            color = if (event.kind == ConsoleEvent.Kind.ERROR) Rose400 else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = 4.dp, top = 2.dp),
-        )
-    }
-}
-

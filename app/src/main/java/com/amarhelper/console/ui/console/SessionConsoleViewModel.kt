@@ -12,6 +12,8 @@ import com.amarhelper.console.domain.model.AgentSession
 import com.amarhelper.console.domain.model.ConsoleEvent
 import com.amarhelper.console.domain.model.TaskState
 import com.amarhelper.console.domain.repository.AgentRepository
+import com.amarhelper.console.ui.chat.ChatEntry
+import com.amarhelper.console.ui.chat.ChatTranscript
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -37,6 +39,15 @@ data class ConsoleUiState(
     val droppedLines: Int = 0,
 ) {
     val state: TaskState get() = session?.state ?: TaskState.UNKNOWN
+
+    /**
+     * The rendered transcript. Derived rather than stored so there is one source of
+     * truth, and built off the raw events so a re-render cannot drift from them.
+     */
+    val transcript: List<ChatEntry> get() = ChatTranscript.build(events)
+
+    /** Live agent state from bookkeeping events, e.g. `running`, `awaiting_user_input`. */
+    val agentState: String? get() = ChatTranscript.latestAgentState(events)
 }
 
 /**
