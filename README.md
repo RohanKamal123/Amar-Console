@@ -21,6 +21,9 @@ and the same APK works against any of them.
 * **OpenHands** — the complete self-hosted OpenHands interface, including repositories,
   skills, workspace, terminal, and conversations supported by the installed server.
 * **Services** — per-service online/offline state, latency, version and last check.
+* **Profile** — a 30-day control ledger for attributed OpenCode/OpenHands requests,
+  input/output tokens, model mix, latency and estimated provider cost. Prompt content is
+  never stored by the ledger.
 * **Settings** — endpoints, credentials, connection tests, theme, polling, diagnostics.
 
 Every screen has explicit loading, empty, error and retry states. The app does not crash

@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Url
+import retrofit2.http.Query
 
 /**
  * LiteLLM health probe.
@@ -22,4 +23,7 @@ interface LiteLlmApi {
 
     @GET
     suspend fun probe(@Url url: String): Response<JsonObject>
+
+    @GET("usage/summary")
+    suspend fun usageSummary(@Query("days") days: Int = 30): Response<UsageSummaryDto>
 }
