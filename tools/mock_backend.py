@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, urlparse
 STATE = {
     "sessions": {},
     "messages": {},
+    "events": {},
     "fail_status": 0,
     "latency_ms": 0,
     "counter": 0,
@@ -120,16 +121,36 @@ class Handler(BaseHTTPRequestHandler):
                 "dependencies": {"postgres": "up", "redis": "up"},
             })
 
-        # OpenHands
-        if path == "/api/v1/app-conversations/search":
+        # OpenHands (self-hosted OSS shape)
+        if path == "/api/options/config":
+            return self._send_json({
+                "APP_MODE": "oss",
+                "GITHUB_CLIENT_ID": "",
+                "FEATURE_FLAGS": {"ENABLE_BILLING": False, "HIDE_LLM_SETTINGS": False},
+            })
+        if path == "/api/conversations":
             items = [s for s in STATE["sessions"].values() if s.get("_openhands")]
-            return self._send_json({"items": [self._as_conversation(s) for s in items]})
-        if path == "/api/v1/app-conversations":
-            ids = query.get("ids", [""])[0].split(",")
-            items = [STATE["sessions"][i] for i in ids if i in STATE["sessions"]]
-            return self._send_json([self._as_conversation(s) for s in items])
+            return self._send_json({
+                "results": [self._as_conversation(s) for s in items],
+                "next_page_id": None,
+            })
+        if path.startswith("/api/conversations/") and path.endswith("/events"):
+            conv_id = path.split("/")[3]
+            return self._send_json({
+                "events": STATE["events"].get(conv_id, []),
+                "has_more": False,
+            })
+        if path.startswith("/api/conversations/"):
+            conv_id = path.split("/")[3]
+            conversation = STATE["sessions"].get(conv_id)
+            if conversation:
+                return self._send_json(self._as_conversation(conversation))
+            return self._send_json({"detail": "not found"}, 404)
 
-        self._send_json({"detail": f"no mock route for {path}"}, 404)
+        # The real OSS server serves its frontend from a catch-all, so an unknown path
+        # returns the SPA shell with HTTP 200 rather than a 404. Reproduced here so the
+        # app's handling of that case is exercised rather than assumed.
+        self._send_html_shell()
 
     def do_POST(self):
         url = urlparse(self.path)
@@ -165,28 +186,51 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        if path == "/api/v1/app-conversations":
+        if path == "/api/conversations":
             with LOCK:
                 STATE["counter"] += 1
                 conv_id = f"conv_{STATE['counter']}"
-                message = payload.get("initial_message", {}).get("content", [{}])
+                prompt = payload.get("initial_user_msg") or "Task"
+                now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 STATE["sessions"][conv_id] = {
                     "id": conv_id,
-                    "title": (message[0].get("text") if message else "Task")[:60],
+                    "title": prompt[:60],
                     "_openhands": True,
-                    "execution_status": "running",
-                    "sandbox_status": "RUNNING",
-                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    "selected_repository": payload.get("selected_repository"),
+                    "status": "STARTING",
+                    "runtime_status": "STATUS$STARTING_RUNTIME",
+                    "created_at": now,
+                    "selected_repository": payload.get("repository"),
                 }
-            threading.Thread(target=self._finish_conversation, args=(conv_id,), daemon=True).start()
+                STATE["events"][conv_id] = [
+                    {"id": 0, "timestamp": now, "source": "user", "message": prompt},
+                ]
+            threading.Thread(target=self._run_conversation, args=(conv_id,), daemon=True).start()
             return self._send_json({
-                "id": f"task_{conv_id}", "status": "WORKING",
-                "app_conversation_id": conv_id, "sandbox_id": "sbx_mock",
-                "created_at": STATE["sessions"][conv_id]["created_at"],
+                "status": "ok",
+                "conversation_id": conv_id,
+                "message": None,
+                "conversation_status": "STARTING",
             })
 
-        self._send_json({"detail": f"no mock route for {path}"}, 404)
+        if path.startswith("/api/conversations/") and path.endswith("/stop"):
+            conv_id = path.split("/")[3]
+            with LOCK:
+                if conv_id in STATE["sessions"]:
+                    STATE["sessions"][conv_id]["status"] = "STOPPED"
+            return self._send_json({"success": True})
+
+        if path.startswith("/api/conversations/") and path.endswith("/message"):
+            conv_id = path.split("/")[3]
+            with LOCK:
+                STATE["events"].setdefault(conv_id, []).append({
+                    "id": len(STATE["events"].get(conv_id, [])),
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "source": "user",
+                    "message": payload.get("message", ""),
+                })
+            return self._send_json({"success": True})
+
+        self._send_html_shell()
 
     def do_DELETE(self):
         if self._maybe_fail():
@@ -197,19 +241,41 @@ class Handler(BaseHTTPRequestHandler):
             STATE["sessions"].pop(session_id, None)
             STATE["messages"].pop(session_id, None)
             return self._send_json({"deleted": True})
-        self._send_json({"detail": "no mock route"}, 404)
+        if path.startswith("/api/conversations/"):
+            conv_id = path.split("/")[3]
+            STATE["sessions"].pop(conv_id, None)
+            STATE["events"].pop(conv_id, None)
+            return self._send_json({"success": True})
+        self._send_html_shell()
 
     # -- simulation ------------------------------------------------------
 
+    def _send_html_shell(self):
+        """What the real OSS server returns for an unknown path: its frontend, HTTP 200."""
+        body = b"<!DOCTYPE html><html><head><title>OpenHands</title></head><body></body></html>"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _as_conversation(self, session):
+        """The server's ConversationInfo, field for field."""
         return {
-            "id": session["id"],
+            "conversation_id": session["id"],
             "title": session.get("title"),
-            "execution_status": session.get("execution_status", "running"),
-            "sandbox_status": session.get("sandbox_status", "RUNNING"),
-            "created_at": session.get("created_at"),
-            "updated_at": session.get("created_at"),
+            "last_updated_at": session.get("created_at"),
+            "status": session.get("status", "RUNNING"),
+            "runtime_status": session.get("runtime_status"),
             "selected_repository": session.get("selected_repository"),
+            "selected_branch": "master",
+            "git_provider": None,
+            "trigger": "gui",
+            "num_connections": 0,
+            "url": None,
+            "session_api_key": None,
+            "created_at": session.get("created_at"),
+            "pr_number": [],
         }
 
     def _simulate_agent(self, session_id):
@@ -231,11 +297,29 @@ class Handler(BaseHTTPRequestHandler):
                     "parts": [part],
                 })
 
-    def _finish_conversation(self, conv_id):
-        time.sleep(6)
-        with LOCK:
-            if conv_id in STATE["sessions"]:
-                STATE["sessions"][conv_id]["execution_status"] = "finished"
+    def _run_conversation(self, conv_id):
+        """Walk a conversation through the OSS status vocabulary, emitting events."""
+        steps = [
+            (1.0, {"source": "environment", "message": "Runtime ready"},
+             {"status": "RUNNING", "runtime_status": "STATUS$READY"}),
+            (1.2, {"source": "agent", "action": "run", "message": "Running the test suite"}, None),
+            (1.2, {"source": "agent", "message": "Added the authentication router."}, None),
+            (1.0, None, {"status": "STOPPED", "runtime_status": None}),
+        ]
+        for delay, event, status in steps:
+            time.sleep(delay)
+            with LOCK:
+                if conv_id not in STATE["sessions"]:
+                    return
+                if event:
+                    events = STATE["events"].setdefault(conv_id, [])
+                    events.append({
+                        "id": len(events),
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        **event,
+                    })
+                if status:
+                    STATE["sessions"][conv_id].update(status)
 
     def _stream_events(self):
         """Server-sent events, mirroring OpenCode's /event contract."""

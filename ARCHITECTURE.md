@@ -47,7 +47,7 @@ Every route the app calls comes from a published API reference. Nothing is inven
 
 | Service | Routes used | Source |
 | --- | --- | --- |
-| OpenHands | `POST /api/v1/app-conversations`, `GET /api/v1/app-conversations`, `GET /api/v1/app-conversations/search`, `GET /api/v1/app-conversations/start-tasks` | docs.openhands.dev — Sandbox Server V1 / Cloud API |
+| OpenHands (self-hosted OSS) | `GET /api/options/config`, `GET /api/conversations`, `GET /api/conversations/{id}`, `POST /api/conversations`, `DELETE /api/conversations/{id}`, `POST /api/conversations/{id}/stop`, `GET /api/conversations/{id}/events` | server source: `openhands/server/routes/manage_conversations.py`, `conversation.py`, `public.py` |
 | OpenCode | `GET /global/health`, `POST /session`, `GET /session`, `GET /session/{id}`, `DELETE /session/{id}`, `POST /session/{id}/prompt_async`, `GET /session/{id}/message`, `GET /event` (SSE) | opencode.ai/docs/server |
 | LiteLLM | `GET /health/liveliness`, `GET /health/readiness` | docs.litellm.ai/docs/proxy/health |
 | Gateway | `GET /health` | **your** contract — see below |
@@ -73,21 +73,35 @@ degraded, `down`/`error`/`unhealthy`/`disconnected` as offline, anything else as
 unknown. With no gateway configured, the Services screen says so rather than inventing a
 status.
 
-### Known contract gaps
+### Which OpenHands
 
-These are capabilities the UI has a place for, but the published contracts do not
-define. The app reports `AppError.Unsupported` and shows the user why — it never fakes a
-success:
+There are two different products behind the name, and they do not share an API:
+
+* **Self-hosted OSS** (`ghcr.io/all-hands-ai/openhands`) — what this app targets.
+  Conversations live under `/api/conversations`, keyed by `conversation_id`, with a
+  `status` (`STARTING`/`RUNNING`/`STOPPED`/`ARCHIVED`) and a separate `runtime_status`
+  (`STATUS$READY`, `STATUS$BUILDING_RUNTIME`, `STATUS$ERROR_*`).
+* **Cloud / Enterprise** — `/api/v1/app-conversations`, keyed by `id`, with
+  `sandbox_status` and `execution_status`. Documented at docs.openhands.dev.
+
+An earlier version of this client was built against the Cloud contract and pointed at an
+OSS server. That failure is worth recording, because the symptom was misleading: the OSS
+server serves its frontend from a catch-all route, so a wrong path returns **HTTP 200
+with an HTML body** instead of a 404. The app reported "the response wasn't in the
+expected format" — technically true, and useless. `AgentRepositoryIntegrationTest` and
+the mock backend both reproduce that catch-all now, so a contract regression fails a
+test rather than reaching a phone.
+
+### Known contract gaps
 
 | Capability | Status |
 | --- | --- |
-| Transcript replay for OpenHands | Not in the v1 contract (status only). The console polls state instead of streaming, and says "Polling status". |
-| Cancelling a running task | Neither provider documents an abort route. The action reports that it is unsupported. |
-| Deleting an OpenHands conversation | Not in the v1 contract. OpenCode session deletion works. |
-| Follow-up messages into a running OpenHands conversation | Not in the v1 contract. |
+| Cancelling a running OpenCode task | OpenCode's published API has no abort route. Reported as unsupported; deleting the session is offered instead. |
+| Live streaming for OpenHands | The OSS server exposes a transcript (`GET .../events`) but no SSE endpoint the app uses, so the console polls at the configured interval and says "Polling status" rather than pretending to stream. |
 
-If your deployment exposes these, the fix is one adapter method each — the domain
-interface (`AgentRepository`) already has the shape.
+Everything else the UI offers now maps to a real endpoint: OpenHands supports transcript
+replay (`/events`), cancellation (`/stop`), deletion (`DELETE`) and follow-up messages
+(`/message`).
 
 ## Task state
 

@@ -5,6 +5,7 @@ import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.net.UnknownServiceException
 import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerializationException
@@ -16,6 +17,12 @@ object ErrorMapper {
 
     fun fromThrowable(throwable: Throwable): AppError = when (throwable) {
         is CancellationException -> AppError.Cancelled
+        // Android refused the request before it left the device. Saying "check your VPN"
+        // here sends the user hunting for a network problem that does not exist.
+        is UnknownServiceException -> AppError.Offline(
+            "Android blocked a plain-HTTP request to this host. Use https, or a private " +
+                "or tailnet address.",
+        )
         is SocketTimeoutException -> AppError.Timeout()
         is UnknownHostException -> AppError.Offline(
             "Can't resolve that host. Check the URL and that your VPN is connected.",

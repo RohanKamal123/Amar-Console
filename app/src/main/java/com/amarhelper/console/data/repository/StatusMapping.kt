@@ -7,28 +7,39 @@ import java.time.format.DateTimeParseException
 /** Provider-specific status vocabularies, normalized onto [TaskState]. */
 internal object StatusMapping {
 
-    /** OpenHands `execution_status`, falling back to `sandbox_status`. */
-    fun fromOpenHands(executionStatus: String?, sandboxStatus: String?): TaskState {
-        executionStatus?.lowercase()?.let { status ->
-            when (status) {
-                "running" -> return TaskState.RUNNING
-                "idle" -> return TaskState.QUEUED
-                "paused", "waiting_for_confirmation" -> return TaskState.WAITING
-                "finished" -> return TaskState.COMPLETED
-                "error", "stuck" -> return TaskState.FAILED
+    /**
+     * Self-hosted OpenHands reports two dimensions: `status` (the conversation) and
+     * `runtime_status` (the sandbox behind it). The runtime is checked first because a
+     * conversation whose runtime failed still reports `status: RUNNING`.
+     *
+     * `STOPPED` is mapped to [TaskState.STOPPED] rather than COMPLETED: the server says
+     * only that the conversation is not running, and claiming the task succeeded would
+     * be an invention.
+     */
+    fun fromOpenHands(status: String?, runtimeStatus: String?): TaskState {
+        val runtime = runtimeStatus?.uppercase()
+        if (runtime != null && runtime.contains("ERROR")) return TaskState.FAILED
+
+        return when (status?.uppercase()) {
+            "STARTING" -> TaskState.QUEUED
+            "RUNNING" -> if (runtime != null && runtime in STARTING_RUNTIME_STATUSES) {
+                TaskState.QUEUED
+            } else {
+                TaskState.RUNNING
             }
-        }
-        return when (sandboxStatus?.uppercase()) {
-            // "WORKING"/"READY" come from the conversation-start response rather than a
-            // sandbox; they are folded in here so a freshly submitted task is never UNKNOWN.
-            "WORKING", "STARTING" -> TaskState.QUEUED
-            "READY" -> TaskState.RUNNING
-            "RUNNING" -> TaskState.RUNNING
-            "PAUSED" -> TaskState.WAITING
-            "ERROR", "MISSING" -> TaskState.FAILED
+            "STOPPED" -> TaskState.STOPPED
+            "ARCHIVED" -> TaskState.CANCELLED
             else -> TaskState.UNKNOWN
         }
     }
+
+    /** Runtime states that mean "not ready to work yet". */
+    private val STARTING_RUNTIME_STATUSES = setOf(
+        "STATUS\$BUILDING_RUNTIME",
+        "STATUS\$STARTING_RUNTIME",
+        "STATUS\$SETTING_UP_WORKSPACE",
+        "STATUS\$SETTING_UP_GIT_HOOKS",
+    )
 
     /** ISO-8601 timestamps as returned by OpenHands. */
     fun parseIsoTimestamp(value: String?): Long? {
@@ -36,7 +47,15 @@ internal object StatusMapping {
         return try {
             Instant.parse(value).toEpochMilli()
         } catch (_: DateTimeParseException) {
-            null
+            // The server emits naive datetimes for some fields; retry as local time.
+            try {
+                java.time.LocalDateTime.parse(value)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+            } catch (_: DateTimeParseException) {
+                null
+            }
         }
     }
 

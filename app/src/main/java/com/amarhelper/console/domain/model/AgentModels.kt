@@ -18,12 +18,14 @@ enum class TaskState {
     RUNNING,
     WAITING,
     COMPLETED,
+    /** Not running, with no claim about whether the work finished — OpenHands' `STOPPED`. */
+    STOPPED,
     FAILED,
     CANCELLED,
     UNKNOWN;
 
     val isTerminal: Boolean
-        get() = this == COMPLETED || this == FAILED || this == CANCELLED
+        get() = this == COMPLETED || this == FAILED || this == CANCELLED || this == STOPPED
 
     val isActive: Boolean
         get() = this == QUEUED || this == RUNNING || this == WAITING

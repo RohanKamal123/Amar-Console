@@ -24,7 +24,7 @@ class FakeAgentRepository : AgentRepository {
     var sessionsResult: ApiResult<List<AgentSession>> = ApiResult.Success(listOf(session("ses_1")))
     var sessionResult: ApiResult<AgentSession> = ApiResult.Success(session("ses_1"))
     var historyResult: ApiResult<List<ConsoleEvent>> = ApiResult.Success(emptyList())
-    var cancelResult: ApiResult<Unit> = ApiResult.Failure(AppError.Unsupported("Cancelling a running task"))
+    var cancelResult: ApiResult<Unit> = ApiResult.Failure(AppError.Unsupported("Cancelling a running OpenCode task"))
     var deleteResult: ApiResult<Unit> = ApiResult.Success(Unit)
     var streaming: Boolean = true
 

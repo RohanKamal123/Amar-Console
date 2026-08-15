@@ -90,7 +90,19 @@ class LiveBackendWorkflowTest {
 
         println("STEP 6 — submit to OpenHands and list sessions from both providers")
         val oh = agents.submitTask(TaskSubmission("Add rate limiting to the auth API.", AgentProvider.OPEN_HANDS))
-        println("   openhands session=${(oh as ApiResult.Success).data.id} state=${oh.data.state}")
+        val conversationId = (oh as ApiResult.Success).data.id
+        println("   openhands session=$conversationId state=${oh.data.state}")
+
+        println("STEP 6b — OpenHands transcript and stop")
+        withContext(Dispatchers.Default) { Thread.sleep(4_000) }
+        val transcript = agents.history(AgentProvider.OPEN_HANDS, conversationId)
+        (transcript as ApiResult.Success).data.forEach { println("   [${it.kind}] ${it.text}") }
+        check(transcript.data.isNotEmpty()) { "no OpenHands transcript" }
+        val stopped = agents.cancel(AgentProvider.OPEN_HANDS, conversationId)
+        println("   stop -> $stopped")
+        check(stopped is ApiResult.Success) { "stop failed" }
+        val afterStop = (agents.session(AgentProvider.OPEN_HANDS, conversationId) as ApiResult.Success).data
+        println("   state after stop = ${afterStop.state}")
         val sessions = (agents.listSessions() as ApiResult.Success).data
         sessions.forEach { println("   ${it.provider.displayName} ${it.id} ${it.state} — ${it.title}") }
         check(sessions.size >= 2)

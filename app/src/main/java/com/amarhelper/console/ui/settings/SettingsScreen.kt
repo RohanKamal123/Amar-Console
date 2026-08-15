@@ -116,6 +116,8 @@ fun SettingsScreen(
                 item(key = "service-${service.name}") {
                     ServiceSettings(
                         service = service,
+                        healthPath = state.config.liteLlmHealthPath,
+                        onHealthPathChange = viewModel::setLiteLlmHealthPath,
                         url = state.urlDrafts[service].orEmpty(),
                         urlError = state.urlErrors[service],
                         urlWarning = state.urlWarnings[service],
@@ -224,6 +226,8 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun ServiceSettings(
     service: ServiceId,
+    healthPath: String,
+    onHealthPathChange: (String) -> Unit,
     url: String,
     urlError: String?,
     urlWarning: String?,
@@ -296,6 +300,30 @@ private fun ServiceSettings(
                 imeAction = ImeAction.Done,
             ),
         )
+
+        if (service == ServiceId.LITE_LLM) {
+            var pathDraft by rememberSaveable(healthPath) { mutableStateOf(healthPath) }
+            OutlinedTextField(
+                value = pathDraft,
+                onValueChange = { pathDraft = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Health path") },
+                supportingText = {
+                    Text(
+                        "Probed to decide online/offline. The upstream proxy serves " +
+                            "health/readiness; a custom router may expose something else.",
+                    )
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            )
+            if (pathDraft.trim().trim('/') != healthPath) {
+                TextButton(
+                    onClick = { onHealthPathChange(pathDraft) },
+                    modifier = Modifier.heightIn(min = MinTouchTarget),
+                ) { Text("Save health path") }
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(

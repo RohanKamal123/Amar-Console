@@ -56,17 +56,17 @@ the services you actually use.
 
 | Service | Typical URL | Notes |
 | --- | --- | --- |
-| OpenHands | `https://openhands.your-tailnet.ts.net` | Bearer token if your deployment requires one |
+| OpenHands | `http://box.your-tailnet.ts.net:3000` | Self-hosted OSS. Bearer token only if your deployment adds auth |
 | OpenCode | `http://box.your-tailnet.ts.net:4096` | started with `opencode serve` |
-| LiteLLM | `https://litellm.your-tailnet.ts.net` | health probes only; the app never sends your master key |
+| LiteLLM | `http://box.your-tailnet.ts.net:4000` | Health probe only; the app never sends your master key. The probed path is configurable in Settings, since deployments often run a custom router in place of the upstream proxy |
 | Gateway / API | `https://gw.your-tailnet.ts.net` | optional; supplies PostgreSQL and Redis health |
 
 **Network topology.** The app is built for VPN-only access (Tailscale or WireGuard).
-Cleartext `http://` is permitted only to `*.ts.net` MagicDNS names, `localhost` and the
-emulator loopback; everything else must be `https://`. Android matches hostnames rather
-than IP ranges, so a raw `100.x.y.z` tailnet address over http is blocked by the
-platform — enable MagicDNS and use the `.ts.net` name. Settings warns you about this as
-you type.
+Cleartext `http://` is permitted to tailnet hosts — both MagicDNS names and
+`100.64.0.0/10` addresses — plus RFC1918 LAN addresses and loopback. Any public host
+must use `https://`. A bare host with no scheme defaults to `http://` when it is private
+or tailnet, and `https://` otherwise, so pasting `vmi3507647.tail7bf6b1.ts.net:4096`
+does the right thing.
 
 **Credentials.** Tokens are encrypted with an AES-256 key held in the Android Keystore
 and are never displayed again after saving. See [SECURITY.md](SECURITY.md).
@@ -119,10 +119,11 @@ credential scan on every push. No workflow depends on private credentials.
 
 ## Status and limitations
 
-* Cancelling a running task, replaying an OpenHands transcript, and deleting an
-  OpenHands conversation are **not supported by the published provider APIs**. The app
-  says so where you would expect those actions, rather than pretending they worked.
+* Cancelling a running **OpenCode** task is not supported by its published API; the app
+  says so rather than pretending it worked. Deleting the session is offered instead.
 * OpenHands sessions are polled for status; OpenCode sessions stream live output.
+* This client targets **self-hosted OSS OpenHands**, not OpenHands Cloud — the two
+  expose different APIs. See ARCHITECTURE.md, "Which OpenHands".
 * Push notifications are not implemented.
 * The instrumented UI suite has not been executed in this project's development
   environment (no KVM for an emulator); it runs in CI.

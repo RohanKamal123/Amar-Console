@@ -147,6 +147,6 @@ class SessionConsoleViewModelTest {
         vm.cancelTask()
         advanceUntilIdle()
 
-        assertTrue(vm.state.value.notice!!.contains("Cancelling a running task"))
+        assertTrue(vm.state.value.notice!!.contains("Cancelling a running"))
     }
 }
