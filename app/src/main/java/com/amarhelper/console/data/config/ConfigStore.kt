@@ -28,6 +28,7 @@ class ConfigStore @Inject constructor(
 ) {
     private object Keys {
         val ENVIRONMENT = stringPreferencesKey("environment")
+        val IDE_URL = stringPreferencesKey("ide_url")
         val OPEN_HANDS_URL = stringPreferencesKey("open_hands_url")
         val OPEN_CODE_URL = stringPreferencesKey("open_code_url")
         val LITE_LLM_URL = stringPreferencesKey("lite_llm_url")
@@ -47,6 +48,7 @@ class ConfigStore @Inject constructor(
             AppConfig(
                 environment = prefs[Keys.ENVIRONMENT]?.let { runCatching { Environment.valueOf(it) }.getOrNull() }
                     ?: Environment.PRODUCTION,
+                ideUrl = prefs[Keys.IDE_URL].orEmpty(),
                 openHandsUrl = prefs[Keys.OPEN_HANDS_URL].orEmpty(),
                 openCodeUrl = prefs[Keys.OPEN_CODE_URL].orEmpty(),
                 liteLlmUrl = prefs[Keys.LITE_LLM_URL].orEmpty(),
@@ -64,6 +66,7 @@ class ConfigStore @Inject constructor(
 
     suspend fun setUrl(service: ServiceId, url: String) {
         val key = when (service) {
+            ServiceId.IDE -> Keys.IDE_URL
             ServiceId.OPEN_HANDS -> Keys.OPEN_HANDS_URL
             ServiceId.OPEN_CODE -> Keys.OPEN_CODE_URL
             ServiceId.LITE_LLM -> Keys.LITE_LLM_URL

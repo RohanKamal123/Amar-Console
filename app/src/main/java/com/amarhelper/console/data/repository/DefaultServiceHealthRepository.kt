@@ -11,6 +11,7 @@ import com.amarhelper.console.data.remote.litellm.LiteLlmApi
 import com.amarhelper.console.data.remote.litellm.LiteLlmHealth
 import com.amarhelper.console.data.remote.opencode.OpenCodeApi
 import com.amarhelper.console.data.remote.openhands.OpenHandsApi
+import com.amarhelper.console.data.remote.web.WebUiApi
 import com.amarhelper.console.domain.model.DependencyHealth
 import com.amarhelper.console.domain.model.HealthState
 import com.amarhelper.console.domain.model.ServiceHealth
@@ -70,6 +71,13 @@ class DefaultServiceHealthRepository @Inject constructor(
     private suspend fun probe(service: ServiceId, url: String): ServiceHealth {
         val startedAt = System.nanoTime()
         val outcome: ApiResult<String?> = when (service) {
+            ServiceId.IDE -> {
+                val api = clientFactory.create(service, url, WebUiApi::class.java)
+                when (val r = safeResponseCall { api.root() }) {
+                    is ApiResult.Success -> ApiResult.Success("web workspace")
+                    is ApiResult.Failure -> r
+                }
+            }
             ServiceId.OPEN_CODE -> {
                 val api = clientFactory.create(service, url, OpenCodeApi::class.java)
                 when (val r = safeResponseCall { api.health() }) {
