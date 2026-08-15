@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Topology: VPN-only (Tailscale / WireGuard).
+
+  Cleartext HTTP is refused everywhere by default. It is permitted ONLY for hosts
+  that cannot be reached from the public internet:
+
+    * .ts.net       Tailscale MagicDNS names (traffic is already WireGuard-encrypted)
+    * localhost     on-device testing
+    * 10.0.2.2      the host loopback as seen from an Android emulator
+
+  Reaching a tailnet peer by raw 100.64.0.0/10 address over http:// will be blocked,
+  because Android's config matches hostnames and cannot express a CIDR range. Enable
+  MagicDNS and use the http://host.tailnet-name.ts.net form. See SECURITY.md.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ts.net</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
