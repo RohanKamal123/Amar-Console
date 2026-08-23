@@ -7,6 +7,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# gradle.properties caps the heap at 1g so the memory-constrained development
+# container survives; CI runners have no such limit, and dex merging for the app plus
+# the instrumentation APK needs more than that. Overridden here rather than raising the
+# committed default, which would break local builds.
+env:
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
