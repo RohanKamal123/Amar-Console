@@ -23,6 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
@@ -132,6 +133,7 @@ fun WorkspaceScreen(
                     title = "OpenHands",
                     onReloadAvailable = { reload = it },
                     useSystemBrowser = !claudeStyle,
+                    showCommandBar = claudeStyle,
                 )
                 Workspace.PROFILE -> ProfileScreen()
                 Workspace.SERVICES -> ServicesScreen(
@@ -150,6 +152,7 @@ private fun BrowserWorkspace(
     basicAuth: (suspend () -> String?)? = null,
     onReloadAvailable: ((() -> Unit)?) -> Unit,
     useSystemBrowser: Boolean = false,
+    showCommandBar: Boolean = false,
 ) {
     if (url.isBlank()) {
         Column(Modifier.fillMaxSize().padding(24.dp)) {
@@ -168,6 +171,7 @@ private fun BrowserWorkspace(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var currentUrl by remember { mutableStateOf(url) }
     var progress by remember { mutableFloatStateOf(0f) }
     var fileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -181,7 +185,8 @@ private fun BrowserWorkspace(
         onDispose { onReloadAvailable(null) }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+      Box(Modifier.weight(1f).fillMaxWidth()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { viewContext ->
@@ -250,6 +255,7 @@ private fun BrowserWorkspace(
 
                         override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                             super.onPageFinished(view, finishedUrl)
+                            finishedUrl?.let { currentUrl = it }
                             progress = 1f
                             view?.let { WorkspaceStyleInjector.apply(it) }
                         }
@@ -258,6 +264,7 @@ private fun BrowserWorkspace(
                             view: WebView?, historyUrl: String?, isReload: Boolean,
                         ) {
                             super.doUpdateVisitedHistory(view, historyUrl, isReload)
+                            historyUrl?.let { currentUrl = it }
                             // The frontend is a single-page app: route changes do not
                             // trigger onPageFinished, so re-assert the styling here too.
                             view?.let { WorkspaceStyleInjector.apply(it) }
@@ -278,6 +285,21 @@ private fun BrowserWorkspace(
             },
         )
         if (progress < 1f) CircularProgressIndicator(progress = { progress })
+      }
+
+      if (showCommandBar) {
+          WorkspaceCommandBar(
+              currentUrl = currentUrl,
+              onEffect = { effect ->
+                  when (effect) {
+                      is WorkspaceEffect.Navigate -> webView?.loadUrl(effect.url)
+                      WorkspaceEffect.Reload -> webView?.reload()
+                      is WorkspaceEffect.OpenExternally ->
+                          openExternally(context, Uri.parse(effect.url))
+                  }
+              },
+          )
+      }
     }
 }
 
