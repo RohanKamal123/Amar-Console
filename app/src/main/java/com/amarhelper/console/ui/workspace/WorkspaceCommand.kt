@@ -1,0 +1,81 @@
+package com.amarhelper.console.ui.workspace
+
+/**
+ * A slash command the app offers over the embedded workspace.
+ *
+ * Every command maps to something already verified against the self-hosted OpenHands
+ * server or to an action the app itself owns — none of them depend on reaching into the
+ * page's DOM, which is what makes this bar survive an OpenHands upgrade.
+ */
+enum class WorkspaceCommand(
+    val token: String,
+    val summary: String,
+    val takesArgument: Boolean = false,
+    /** Commands that only make sense once a conversation is open. */
+    val needsConversation: Boolean = false,
+) {
+    NEW("/new", "Start a conversation, optionally with a prompt", takesArgument = true),
+    STOP("/stop", "Interrupt the agent", needsConversation = true),
+    SESSIONS("/sessions", "Back to the conversation list"),
+    SETTINGS("/settings", "Open the OpenHands settings page"),
+    RELOAD("/reload", "Reload the page"),
+    CHROME("/chrome", "Open the current page in Chrome"),
+    HELP("/help", "Show these commands");
+
+    companion object {
+
+        /** The palette entries matching what has been typed so far. */
+        fun matching(input: String): List<WorkspaceCommand> {
+            val trimmed = input.trimStart()
+            if (!trimmed.startsWith("/")) return emptyList()
+            val token = trimmed.substringBefore(' ').lowercase()
+            return entries.filter { it.token.startsWith(token) }
+        }
+
+        /**
+         * Parses typed input. Returns null when the text is not a command, so the caller
+         * can treat it as an ordinary message rather than guessing.
+         */
+        fun parse(input: String): Parsed? {
+            val trimmed = input.trim()
+            if (!trimmed.startsWith("/")) return null
+            val token = trimmed.substringBefore(' ').lowercase()
+            val command = entries.firstOrNull { it.token == token } ?: return null
+            val argument = trimmed.substringAfter(' ', missingDelimiterValue = "").trim()
+            return Parsed(command, argument.takeIf { it.isNotEmpty() })
+        }
+    }
+
+    data class Parsed(val command: WorkspaceCommand, val argument: String?)
+}
+
+/** What the bar asks the hosting WebView to do. */
+sealed interface WorkspaceEffect {
+    data class Navigate(val url: String) : WorkspaceEffect
+    data object Reload : WorkspaceEffect
+    data class OpenExternally(val url: String) : WorkspaceEffect
+}
+
+/**
+ * Reads the conversation id out of the address the WebView is showing.
+ *
+ * The OpenHands frontend routes conversations at `conversations/:conversationId`
+ * (frontend/src/routes.ts at 0.62.0). Parsing the URL is how the native bar knows which
+ * conversation the page is on without reaching into the page itself.
+ */
+object WorkspaceUrl {
+
+    private val conversationPath = Regex("""/conversations/([^/?#]+)""")
+
+    fun conversationId(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        return conversationPath.find(url)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+    }
+
+    fun conversationUrl(baseUrl: String, conversationId: String): String =
+        "${baseUrl.trimEnd('/')}/conversations/$conversationId"
+
+    fun sessionsUrl(baseUrl: String): String = baseUrl.trimEnd('/')
+
+    fun settingsUrl(baseUrl: String): String = "${baseUrl.trimEnd('/')}/settings"
+}

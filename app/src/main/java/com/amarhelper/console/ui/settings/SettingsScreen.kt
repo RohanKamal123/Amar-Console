@@ -147,6 +147,26 @@ fun SettingsScreen(
                 }
             }
 
+            item { SectionHeader("Workspaces") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Claude-style mobile workspace", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Renders OpenHands and OpenCode inside the app with phone-sized " +
+                                "chat styling. Turn off to open them in Chrome with their stock " +
+                                "desktop interface.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.config.claudeStyleWorkspaces,
+                        onCheckedChange = viewModel::setClaudeStyleWorkspaces,
+                    )
+                }
+            }
+
             item { SectionHeader("Polling") }
             item {
                 PollIntervalRow(

@@ -43,6 +43,12 @@ data class AppConfig(
      */
     val liteLlmHealthPath: String = DEFAULT_LITELLM_HEALTH_PATH,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /**
+     * Render OpenHands and OpenCode inside the app with Claude-style mobile styling.
+     * Turning this off returns them to the system browser, which renders the stock
+     * desktop interface and cannot be styled.
+     */
+    val claudeStyleWorkspaces: Boolean = true,
     val verboseNetworkLogging: Boolean = false,
 ) {
     fun urlFor(service: ServiceId): String = when (service) {

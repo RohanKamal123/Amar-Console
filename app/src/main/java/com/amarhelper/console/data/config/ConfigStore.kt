@@ -36,6 +36,7 @@ class ConfigStore @Inject constructor(
         val POLL_INTERVAL = intPreferencesKey("poll_interval_seconds")
         val LITELLM_HEALTH_PATH = stringPreferencesKey("litellm_health_path")
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val CLAUDE_STYLE_WORKSPACES = booleanPreferencesKey("claude_style_workspaces")
         val VERBOSE_LOGGING = booleanPreferencesKey("verbose_network_logging")
     }
 
@@ -59,6 +60,7 @@ class ConfigStore @Inject constructor(
                 themeMode = prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                     ?: ThemeMode.SYSTEM,
                 verboseNetworkLogging = prefs[Keys.VERBOSE_LOGGING] ?: false,
+                claudeStyleWorkspaces = prefs[Keys.CLAUDE_STYLE_WORKSPACES] ?: true,
             )
         }
 
@@ -91,6 +93,10 @@ class ConfigStore @Inject constructor(
 
     suspend fun setThemeMode(mode: ThemeMode) {
         context.configDataStore.edit { it[Keys.THEME_MODE] = mode.name }
+    }
+
+    suspend fun setClaudeStyleWorkspaces(enabled: Boolean) {
+        context.configDataStore.edit { it[Keys.CLAUDE_STYLE_WORKSPACES] = enabled }
     }
 
     suspend fun setVerboseNetworkLogging(enabled: Boolean) {
