@@ -1,0 +1,205 @@
+/*
+ * Claude-app styling for the embedded OpenHands web interface.
+ *
+ * Selectors are taken from the OpenHands frontend source at the tag this stack runs
+ * (0.62.0): data-testid attributes are used wherever they exist because they are the
+ * most stable hooks in that codebase; Tailwind utility classes are never targeted, since
+ * they change freely between releases. Element selectors (article/pre/code) are the
+ * fallback.
+ *
+ * Everything here is cosmetic. If a selector stops matching after an OpenHands upgrade,
+ * the page renders in its own default styling rather than breaking.
+ */
+
+:root {
+  --cl-bg: #faf9f7;
+  --cl-surface: #ffffff;
+  --cl-user-bubble: #f0eee6;
+  --cl-text: #1f1e1d;
+  --cl-text-dim: #6b6a67;
+  --cl-border: #e5e3dd;
+  --cl-accent: #d97757;
+  --cl-code-bg: #1f1e1d;
+  --cl-code-text: #f5f4f1;
+  --cl-radius: 18px;
+  --cl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --cl-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cl-bg: #262624;
+    --cl-surface: #30302e;
+    --cl-user-bubble: #3a3a37;
+    --cl-text: #f5f4f1;
+    --cl-text-dim: #a3a29e;
+    --cl-border: #43423f;
+    --cl-code-bg: #1a1a19;
+    --cl-code-text: #f5f4f1;
+  }
+}
+
+html[data-claude-style] body {
+  background: var(--cl-bg) !important;
+  color: var(--cl-text) !important;
+  font-family: var(--cl-font) !important;
+  font-size: 16px !important;
+  line-height: 1.65 !important;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* One column on a phone: the desktop shell is chrome we do not need. */
+html[data-claude-style] [data-testid="root-layout"] {
+  display: block !important;
+  padding: 0 !important;
+  background: var(--cl-bg) !important;
+}
+
+html[data-claude-style] [data-testid="app-route"] {
+  max-width: 100% !important;
+  padding: 0 !important;
+}
+
+/* ---- Conversation ---------------------------------------------------- */
+
+/* User turn: a soft bubble, the way the Claude app shows your own message. */
+html[data-claude-style] [data-testid="user-message"] {
+  background: var(--cl-user-bubble) !important;
+  color: var(--cl-text) !important;
+  border-radius: var(--cl-radius) !important;
+  padding: 12px 16px !important;
+  margin: 18px 0 6px auto !important;
+  max-width: 88% !important;
+  width: fit-content !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Agent turn: plain text on the page, no card, no bubble. */
+html[data-claude-style] [data-testid="agent-message"] {
+  background: transparent !important;
+  color: var(--cl-text) !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 20px 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+html[data-claude-style] [data-testid="agent-message"] p,
+html[data-claude-style] [data-testid="user-message"] p {
+  margin: 0 0 12px 0 !important;
+  font-size: 16px !important;
+  line-height: 1.65 !important;
+}
+
+html[data-claude-style] [data-testid="agent-message"] li {
+  margin: 6px 0 !important;
+  line-height: 1.6 !important;
+}
+
+html[data-claude-style] [data-testid="agent-message"] h1,
+html[data-claude-style] [data-testid="agent-message"] h2,
+html[data-claude-style] [data-testid="agent-message"] h3 {
+  font-weight: 600 !important;
+  line-height: 1.35 !important;
+  margin: 20px 0 8px !important;
+}
+
+/* ---- Code and diffs -------------------------------------------------- */
+
+html[data-claude-style] pre {
+  background: var(--cl-code-bg) !important;
+  color: var(--cl-code-text) !important;
+  border-radius: 12px !important;
+  padding: 14px !important;
+  margin: 12px 0 !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  font-family: var(--cl-mono) !important;
+  font-size: 13.5px !important;
+  line-height: 1.55 !important;
+  border: none !important;
+}
+
+html[data-claude-style] pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+  white-space: pre !important;
+}
+
+/* Inline code reads as a token, not as a block. */
+html[data-claude-style] :not(pre) > code {
+  background: var(--cl-user-bubble) !important;
+  color: var(--cl-text) !important;
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+  font-family: var(--cl-mono) !important;
+  font-size: 0.9em !important;
+}
+
+/* ---- Composer -------------------------------------------------------- */
+
+/* Pinned to the bottom, clear of the gesture bar, with room to type. */
+html[data-claude-style] [data-testid="interactive-chat-box"] {
+  position: sticky !important;
+  bottom: 0 !important;
+  background: var(--cl-bg) !important;
+  border-top: 1px solid var(--cl-border) !important;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) !important;
+  margin: 0 !important;
+  z-index: 40 !important;
+}
+
+html[data-claude-style] [data-testid="chat-input"],
+html[data-claude-style] [data-testid="chat-input"] textarea {
+  background: var(--cl-surface) !important;
+  color: var(--cl-text) !important;
+  border: 1px solid var(--cl-border) !important;
+  border-radius: 22px !important;
+  padding: 12px 16px !important;
+  font-family: var(--cl-font) !important;
+  font-size: 16px !important; /* 16px keeps iOS/Android from zooming on focus */
+  min-height: 48px !important;
+  box-shadow: none !important;
+}
+
+/* Send and stop are the primary controls: circular, accent, thumb-sized. */
+html[data-claude-style] [data-testid="submit-button"],
+html[data-claude-style] [data-testid="stop-button"] {
+  min-width: 44px !important;
+  min-height: 44px !important;
+  border-radius: 50% !important;
+  background: var(--cl-accent) !important;
+  color: #ffffff !important;
+  border: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+html[data-claude-style] [data-testid="paperclip-icon"] {
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
+
+/* Every remaining tap target clears the accessibility minimum. */
+html[data-claude-style] button,
+html[data-claude-style] [role="button"] {
+  min-height: 40px;
+}
+
+/* ---- Chrome we do not want on a phone -------------------------------- */
+
+html[data-claude-style] [data-testid="conversation-name"] {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--cl-text) !important;
+}
+
+html[data-claude-style] ::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}

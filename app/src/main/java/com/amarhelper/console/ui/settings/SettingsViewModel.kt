@@ -196,6 +196,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { configStore.setPollInterval(seconds) }
     }
 
+    fun setClaudeStyleWorkspaces(enabled: Boolean) {
+        viewModelScope.launch { configStore.setClaudeStyleWorkspaces(enabled) }
+    }
+
     fun setVerboseLogging(enabled: Boolean) {
         viewModelScope.launch { configStore.setVerboseNetworkLogging(enabled) }
     }

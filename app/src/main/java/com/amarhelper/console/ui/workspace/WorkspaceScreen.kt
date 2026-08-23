@@ -62,6 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amarhelper.console.data.config.AppConfig
 import com.amarhelper.console.ui.services.ServicesScreen
+import com.amarhelper.console.BuildConfig
 import com.amarhelper.console.ui.profile.ProfileScreen
 import kotlinx.coroutines.launch
 
@@ -81,6 +82,7 @@ fun WorkspaceScreen(
 ) {
     val config by viewModel.config.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf(Workspace.OPEN_HANDS) }
+    val claudeStyle = config.claudeStyleWorkspaces
     var reload by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Scaffold(
@@ -123,13 +125,13 @@ fun WorkspaceScreen(
                     url = config.openCodeUrl,
                     title = "OpenCode",
                     onReloadAvailable = { reload = it },
-                    useSystemBrowser = true,
+                    useSystemBrowser = !claudeStyle,
                 )
                 Workspace.OPEN_HANDS -> BrowserWorkspace(
                     url = config.openHandsUrl,
                     title = "OpenHands",
                     onReloadAvailable = { reload = it },
-                    useSystemBrowser = true,
+                    useSystemBrowser = !claudeStyle,
                 )
                 Workspace.PROFILE -> ProfileScreen()
                 Workspace.SERVICES -> ServicesScreen(
@@ -191,6 +193,14 @@ private fun BrowserWorkspace(
                     settings.allowContentAccess = true
                     settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                     settings.mediaPlaybackRequiresUserGesture = false
+                    settings.databaseEnabled = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    settings.setSupportMultipleWindows(false)
+                    // Remote debugging is how a rendering problem in this WebView gets
+                    // diagnosed at all; debug builds only.
+                    if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
                     settings.setSupportZoom(true)
                     val workspaceWebView = this
                     CookieManager.getInstance().apply {
@@ -236,6 +246,21 @@ private fun BrowserWorkspace(
                                     basicAuth()?.let { handler.proceed("opencode", it) } ?: handler.cancel()
                                 }
                             }
+                        }
+
+                        override fun onPageFinished(view: WebView?, finishedUrl: String?) {
+                            super.onPageFinished(view, finishedUrl)
+                            progress = 1f
+                            view?.let { WorkspaceStyleInjector.apply(it) }
+                        }
+
+                        override fun doUpdateVisitedHistory(
+                            view: WebView?, historyUrl: String?, isReload: Boolean,
+                        ) {
+                            super.doUpdateVisitedHistory(view, historyUrl, isReload)
+                            // The frontend is a single-page app: route changes do not
+                            // trigger onPageFinished, so re-assert the styling here too.
+                            view?.let { WorkspaceStyleInjector.apply(it) }
                         }
 
                         override fun onReceivedHttpError(
