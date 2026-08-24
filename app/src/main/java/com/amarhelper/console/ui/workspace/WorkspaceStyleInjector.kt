@@ -28,7 +28,7 @@ object WorkspaceStyleInjector {
         return try {
             val css = context.assets.open(CSS_ASSET).bufferedReader().use { it.readText() }
             val js = context.assets.open(JS_ASSET).bufferedReader().use { it.readText() }
-            val built = js.replace(CSS_PLACEHOLDER, quoteForJs(css))
+            val built = substitute(js, css)
             cachedScript = built
             built
         } catch (e: Exception) {
@@ -41,6 +41,30 @@ object WorkspaceStyleInjector {
     fun apply(webView: WebView) {
         val script = script(webView.context) ?: return
         webView.evaluateJavascript(script, null)
+    }
+
+    /**
+     * Puts the stylesheet into the script at the one place that expects it.
+     *
+     * The substitution used to be a plain `replace`, which rewrites *every* occurrence.
+     * The script's own doc comment named the placeholder, so the 15KB quoted stylesheet
+     * was spliced into that comment too — and because CSS contains the sequence that
+     * closes a block comment, the comment ended early and left stylesheet text in the
+     * file as bare JavaScript. The result was `SyntaxError: Invalid or unexpected token`
+     * on every page load, reported against the page's own URL because `evaluateJavascript`
+     * runs in the document's context. Nothing in the script ran, and the failure was
+     * indistinguishable from the page having broken itself.
+     *
+     * So the count is checked rather than trusted. Anything other than exactly one
+     * placeholder throws, the caller degrades to an unstyled page, and the reason is
+     * logged instead of being emitted as a corrupt script.
+     */
+    internal fun substitute(js: String, css: String): String {
+        val occurrences = js.split(CSS_PLACEHOLDER).size - 1
+        require(occurrences == 1) {
+            "Expected exactly one $CSS_PLACEHOLDER placeholder in $JS_ASSET, found $occurrences"
+        }
+        return js.replace(CSS_PLACEHOLDER, quoteForJs(css))
     }
 
     /**
