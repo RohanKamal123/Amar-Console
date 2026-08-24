@@ -62,6 +62,28 @@ object WorkspaceDiagnostics {
      * when a diagnosis has already been wrong once, the raw numbers are worth more than
      * a summary of them.
      */
+    /**
+     * Installed as the page starts, before its own scripts run.
+     *
+     * The console reports these failures without a filename, which is what has made
+     * them impossible to place. An error listener sees the source, line and column the
+     * console omits.
+     */
+    const val ERROR_LISTENER_SCRIPT: String = """
+        (function () {
+          if (window.__claudeErrors) return;
+          window.__claudeErrors = [];
+          window.addEventListener("error", function (event) {
+            window.__claudeErrors.push({
+              message: String(event.message || ""),
+              source: String(event.filename || "(inline)"),
+              line: event.lineno,
+              column: event.colno
+            });
+          }, true);
+        })();
+    """
+
     const val PROBE_SCRIPT: String = """
         (function () {
           function box(selector) {
@@ -83,6 +105,7 @@ object WorkspaceDiagnostics {
             var text = scripts[i].textContent || "";
             inline.push({
               index: i,
+              type: scripts[i].getAttribute("type") || "(classic)",
               length: text.length,
               // Characters that older engines reject inside a string literal.
               hasLineSeparator: /[\u2028\u2029]/.test(text),
@@ -103,7 +126,13 @@ object WorkspaceDiagnostics {
             chatInput: box('[data-testid="chat-input"]'),
             styled: document.documentElement.hasAttribute("data-claude-style"),
             styleTag: !!document.getElementById("claude-workspace-style"),
-            inlineScripts: inline
+            inlineScripts: inline,
+            errors: window.__claudeErrors || "listener missing",
+            // The failures report line 9 of something unnamed; this is what the served
+            // document actually has there.
+            documentLines: (document.documentElement.outerHTML || "")
+              .split("\n").slice(5, 12)
+              .map(function (line, offset) { return (offset + 6) + ": " + line.slice(0, 120); })
           });
         })();
     """

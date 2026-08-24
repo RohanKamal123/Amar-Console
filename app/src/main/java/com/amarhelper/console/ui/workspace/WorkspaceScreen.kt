@@ -272,6 +272,15 @@ private fun BrowserWorkspace(
                             }
                         }
 
+                        override fun onPageStarted(
+                            view: WebView?, startedUrl: String?, favicon: android.graphics.Bitmap?,
+                        ) {
+                            super.onPageStarted(view, startedUrl, favicon)
+                            // Ahead of the page's own scripts, so load-time failures are
+                            // captured with the source the console leaves out.
+                            view?.evaluateJavascript(WorkspaceDiagnostics.ERROR_LISTENER_SCRIPT, null)
+                        }
+
                         override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                             super.onPageFinished(view, finishedUrl)
                             finishedUrl?.let { currentUrl = it }
