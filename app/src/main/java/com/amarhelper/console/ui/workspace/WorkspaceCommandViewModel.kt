@@ -169,6 +169,8 @@ class WorkspaceCommandViewModel @Inject constructor(
                     effects.send(WorkspaceEffect.OpenExternally(target))
                 }
 
+                WorkspaceCommand.DIAG -> effects.send(WorkspaceEffect.RunDiagnostics)
+
                 WorkspaceCommand.HELP -> _state.update {
                     it.copy(notice = WorkspaceCommand.entries.joinToString("  ") { entry -> entry.token })
                 }

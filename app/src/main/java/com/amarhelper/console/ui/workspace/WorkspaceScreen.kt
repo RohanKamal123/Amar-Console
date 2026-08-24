@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
 import android.webkit.HttpAuthHandler
@@ -34,6 +35,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,6 +91,7 @@ fun WorkspaceScreen(
     val config by viewModel.config.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf(Workspace.OPEN_HANDS) }
     val claudeStyle = config.claudeStyleWorkspaces
+    val inApp = config.openWorkspacesInApp
     var reload by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Scaffold(
@@ -126,14 +134,16 @@ fun WorkspaceScreen(
                     url = config.openCodeUrl,
                     title = "OpenCode",
                     onReloadAvailable = { reload = it },
-                    useSystemBrowser = !claudeStyle,
+                    useSystemBrowser = !inApp,
+                    applyStyling = claudeStyle,
                 )
                 Workspace.OPEN_HANDS -> BrowserWorkspace(
                     url = config.openHandsUrl,
                     title = "OpenHands",
                     onReloadAvailable = { reload = it },
-                    useSystemBrowser = !claudeStyle,
-                    showCommandBar = claudeStyle,
+                    useSystemBrowser = !inApp,
+                    showCommandBar = inApp,
+                    applyStyling = claudeStyle,
                 )
                 Workspace.PROFILE -> ProfileScreen()
                 Workspace.SERVICES -> ServicesScreen(
@@ -153,6 +163,7 @@ private fun BrowserWorkspace(
     onReloadAvailable: ((() -> Unit)?) -> Unit,
     useSystemBrowser: Boolean = false,
     showCommandBar: Boolean = false,
+    applyStyling: Boolean = true,
 ) {
     if (url.isBlank()) {
         Column(Modifier.fillMaxSize().padding(24.dp)) {
@@ -172,6 +183,7 @@ private fun BrowserWorkspace(
     val scope = rememberCoroutineScope()
     var webView by remember { mutableStateOf<WebView?>(null) }
     var currentUrl by remember { mutableStateOf(url) }
+    var diagnostics by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableFloatStateOf(0f) }
     var fileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -217,6 +229,13 @@ private fun BrowserWorkspace(
                             progress = newProgress / 100f
                         }
 
+                        override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                            // A blank page looks like a successful load from outside;
+                            // its console is where the reason actually shows up.
+                            message?.let(WorkspaceDiagnostics::record)
+                            return super.onConsoleMessage(message)
+                        }
+
                         override fun onShowFileChooser(
                             webView: WebView?,
                             callback: ValueCallback<Array<Uri>>?,
@@ -257,7 +276,7 @@ private fun BrowserWorkspace(
                             super.onPageFinished(view, finishedUrl)
                             finishedUrl?.let { currentUrl = it }
                             progress = 1f
-                            view?.let { WorkspaceStyleInjector.apply(it) }
+                            if (applyStyling) view?.let { WorkspaceStyleInjector.apply(it) }
                         }
 
                         override fun doUpdateVisitedHistory(
@@ -267,7 +286,7 @@ private fun BrowserWorkspace(
                             historyUrl?.let { currentUrl = it }
                             // The frontend is a single-page app: route changes do not
                             // trigger onPageFinished, so re-assert the styling here too.
-                            view?.let { WorkspaceStyleInjector.apply(it) }
+                            if (applyStyling) view?.let { WorkspaceStyleInjector.apply(it) }
                         }
 
                         override fun onReceivedHttpError(
@@ -287,6 +306,32 @@ private fun BrowserWorkspace(
         if (progress < 1f) CircularProgressIndicator(progress = { progress })
       }
 
+      diagnostics?.let { report ->
+          val clipboard = LocalClipboardManager.current
+          AlertDialog(
+              onDismissRequest = { diagnostics = null },
+              title = { Text("Page diagnostics") },
+              text = {
+                  Text(
+                      text = report,
+                      style = MaterialTheme.typography.bodySmall.copy(
+                          fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                      ),
+                      modifier = Modifier.verticalScroll(rememberScrollState()),
+                  )
+              },
+              confirmButton = {
+                  TextButton(onClick = {
+                      clipboard.setText(AnnotatedString(report))
+                      diagnostics = null
+                  }) { Text("Copy") }
+              },
+              dismissButton = {
+                  TextButton(onClick = { diagnostics = null }) { Text("Close") }
+              },
+          )
+      }
+
       if (showCommandBar) {
           WorkspaceCommandBar(
               currentUrl = currentUrl,
@@ -296,6 +341,14 @@ private fun BrowserWorkspace(
                       WorkspaceEffect.Reload -> webView?.reload()
                       is WorkspaceEffect.OpenExternally ->
                           openExternally(context, Uri.parse(effect.url))
+                      WorkspaceEffect.RunDiagnostics -> webView?.evaluateJavascript(
+                          WorkspaceDiagnostics.PROBE_SCRIPT,
+                      ) { result ->
+                          diagnostics = WorkspaceDiagnostics.report(
+                              probeJson = result,
+                              appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                          )
+                      }
                   }
               },
           )

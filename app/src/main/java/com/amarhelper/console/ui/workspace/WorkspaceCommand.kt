@@ -20,6 +20,7 @@ enum class WorkspaceCommand(
     SETTINGS("/settings", "Open the OpenHands settings page"),
     RELOAD("/reload", "Reload the page"),
     CHROME("/chrome", "Open the current page in Chrome"),
+    DIAG("/diag", "Report what the page says about itself"),
     HELP("/help", "Show these commands");
 
     companion object {
@@ -51,6 +52,9 @@ enum class WorkspaceCommand(
 
 /** What the bar asks the hosting WebView to do. */
 sealed interface WorkspaceEffect {
+    /** Measure the page from the inside and show the result. */
+    data object RunDiagnostics : WorkspaceEffect
+
     data class Navigate(val url: String) : WorkspaceEffect
     data object Reload : WorkspaceEffect
     data class OpenExternally(val url: String) : WorkspaceEffect
