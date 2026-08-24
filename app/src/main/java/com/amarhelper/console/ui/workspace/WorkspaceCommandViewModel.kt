@@ -126,7 +126,8 @@ class WorkspaceCommandViewModel @Inject constructor(
 
         viewModelScope.launch {
             val baseUrl = configStore.current().openHandsUrl
-            if (baseUrl.isBlank() && command != WorkspaceCommand.HELP) {
+            val needsBaseUrl = command != WorkspaceCommand.HELP && command != WorkspaceCommand.CLEARCACHE
+            if (baseUrl.isBlank() && needsBaseUrl) {
                 _state.update { it.copy(notice = "Set the OpenHands URL in Settings first.") }
                 return@launch
             }
@@ -168,6 +169,8 @@ class WorkspaceCommandViewModel @Inject constructor(
                         ?: WorkspaceUrl.sessionsUrl(baseUrl)
                     effects.send(WorkspaceEffect.OpenExternally(target))
                 }
+
+                WorkspaceCommand.CLEARCACHE -> effects.send(WorkspaceEffect.ClearCache)
 
                 WorkspaceCommand.DEVTOOLS -> effects.send(WorkspaceEffect.OpenDevTools)
 

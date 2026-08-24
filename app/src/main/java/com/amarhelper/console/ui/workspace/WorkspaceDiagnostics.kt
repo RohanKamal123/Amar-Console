@@ -84,6 +84,88 @@ object WorkspaceDiagnostics {
         })();
     """
 
+    /**
+     * Fetches the page's own module bundles and reports what comes back.
+     *
+     * The console says `Uncaught SyntaxError: Invalid or unexpected token` with no
+     * filename, which is what a `<script type="module">` reports when the thing it
+     * imported is not JavaScript at all. OpenHands serves its frontend through
+     * `SPAStaticFiles`, whose catch-all answers any unknown path with `index.html` at
+     * HTTP 200 — so a bundle whose content hash no longer exists comes back as HTML with
+     * a success status, and every check from outside the page looks fine.
+     *
+     * This distinguishes the two cases outright: the content type of each import, plus
+     * the asset paths a freshly fetched document names, next to the ones this document
+     * actually loaded. If they differ, the loaded document came from cache.
+     *
+     * Asynchronous by necessity — `evaluateJavascript` cannot wait on a promise — so the
+     * result is parked on `window.__claudeAssetProbe` and read back by [PROBE_SCRIPT].
+     */
+    const val ASSET_PROBE_SCRIPT: String = """
+        (function () {
+          window.__claudeAssetProbe = "running";
+          var urls = [];
+          function add(value) {
+            if (!value) return;
+            try {
+              var absolute = new URL(value, location.href).href;
+              if (urls.indexOf(absolute) < 0) urls.push(absolute);
+            } catch (error) { /* not a resolvable specifier */ }
+          }
+
+          // Imports named by the inline module script — the ones that fail.
+          var inline = document.querySelectorAll('script[type="module"]:not([src])');
+          for (var i = 0; i < inline.length; i++) {
+            var text = inline[i].textContent || "";
+            var specifier = /(?:from|import)\s*["']([^"']+)["']/g;
+            var found;
+            while ((found = specifier.exec(text)) !== null) add(found[1]);
+          }
+          var tags = document.querySelectorAll('script[src], link[rel="modulepreload"][href]');
+          for (var j = 0; j < tags.length; j++) {
+            add(tags[j].getAttribute("src") || tags[j].getAttribute("href"));
+          }
+
+          var results = [];
+          function describe(url) {
+            return fetch(url, { cache: "no-store" }).then(function (response) {
+              return response.text().then(function (body) {
+                results.push({
+                  url: url.replace(location.origin, ""),
+                  status: response.status,
+                  type: response.headers.get("content-type") || "(none)",
+                  head: body.slice(0, 60).replace(/\s+/g, " ")
+                });
+              });
+            }).catch(function (error) {
+              results.push({ url: url.replace(location.origin, ""), status: "failed", type: String(error) });
+            });
+          }
+
+          var jobs = [];
+          for (var k = 0; k < urls.length && k < 6; k++) jobs.push(describe(urls[k]));
+
+          // What the server says the document should reference right now.
+          jobs.push(fetch(location.href, { cache: "no-store" })
+            .then(function (response) { return response.text(); })
+            .then(function (html) {
+              var references = [];
+              var asset = /["'](\/assets\/[^"']+)["']/g;
+              var hit;
+              while ((hit = asset.exec(html)) !== null && references.length < 6) {
+                if (references.indexOf(hit[1]) < 0) references.push(hit[1]);
+              }
+              results.push({ url: "(server's current document)", references: references });
+            })
+            .catch(function (error) {
+              results.push({ url: "(server's current document)", status: String(error) });
+            }));
+
+          Promise.all(jobs).then(function () { window.__claudeAssetProbe = results; });
+          return urls.length;
+        })();
+    """
+
     const val PROBE_SCRIPT: String = """
         (function () {
           function box(selector) {
@@ -127,6 +209,7 @@ object WorkspaceDiagnostics {
             styled: document.documentElement.hasAttribute("data-claude-style"),
             styleTag: !!document.getElementById("claude-workspace-style"),
             inlineScripts: inline,
+            assets: window.__claudeAssetProbe || "not run",
             errors: window.__claudeErrors || "listener missing",
             // The failures report line 9 of something unnamed; this is what the served
             // document actually has there.

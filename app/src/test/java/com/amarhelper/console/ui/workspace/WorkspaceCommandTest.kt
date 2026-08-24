@@ -79,6 +79,18 @@ class WorkspaceCommandTest {
     }
 
     @Test
+    fun `clearing the cache is reachable without a conversation`() {
+        val parsed = WorkspaceCommand.parse("/clearcache")!!
+
+        assertEquals(WorkspaceCommand.CLEARCACHE, parsed.command)
+        assertTrue(!parsed.command.needsConversation)
+        assertEquals(
+            listOf(WorkspaceCommand.CHROME, WorkspaceCommand.CLEARCACHE),
+            WorkspaceCommand.matching("/c"),
+        )
+    }
+
+    @Test
     fun `only commands needing a conversation are marked as such`() {
         assertTrue(WorkspaceCommand.STOP.needsConversation)
         assertTrue(!WorkspaceCommand.NEW.needsConversation)

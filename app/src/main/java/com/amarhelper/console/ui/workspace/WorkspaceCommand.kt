@@ -20,6 +20,7 @@ enum class WorkspaceCommand(
     SETTINGS("/settings", "Open the OpenHands settings page"),
     RELOAD("/reload", "Reload the page"),
     CHROME("/chrome", "Open the current page in Chrome"),
+    CLEARCACHE("/clearcache", "Drop the cached page and reload it"),
     DEVTOOLS("/devtools", "Open developer tools inside the page"),
     DIAG("/diag", "Report what the page says about itself"),
     HELP("/help", "Show these commands");
@@ -58,6 +59,18 @@ sealed interface WorkspaceEffect {
 
     /** Start on-device developer tools inside the page. */
     data object OpenDevTools : WorkspaceEffect
+
+    /**
+     * Empties the WebView's HTTP cache, then reloads.
+     *
+     * The OpenHands frontend is a Vite build: `index.html` names its bundles by content
+     * hash, so a cached copy of that document from an earlier deploy points at asset
+     * paths the server no longer has. The server answers those with its SPA catch-all —
+     * `index.html`, HTTP 200, `text/html` — and a `<script type="module">` importing HTML
+     * dies with a syntax error before anything renders. Clearing the cache is the only
+     * lever this side of the connection has over that.
+     */
+    data object ClearCache : WorkspaceEffect
 
     data class Navigate(val url: String) : WorkspaceEffect
     data object Reload : WorkspaceEffect

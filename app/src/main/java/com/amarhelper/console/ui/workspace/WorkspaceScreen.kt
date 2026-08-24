@@ -74,6 +74,9 @@ import com.amarhelper.console.BuildConfig
 import com.amarhelper.console.ui.profile.ProfileScreen
 import kotlinx.coroutines.launch
 
+/** How long the asset probe's fetches get before the report is read back. */
+private const val ASSET_PROBE_TIMEOUT_MS = 1_500L
+
 private enum class Workspace(val label: String, val icon: ImageVector) {
     IDE("IDE", Icons.Default.Computer),
     OPEN_CODE("OpenCode", Icons.Default.Code),
@@ -357,6 +360,12 @@ private fun BrowserWorkspace(
                       WorkspaceEffect.Reload -> webView?.reload()
                       is WorkspaceEffect.OpenExternally ->
                           openExternally(context, Uri.parse(effect.url))
+                      WorkspaceEffect.ClearCache -> webView?.let { view ->
+                          view.clearCache(true)
+                          WorkspaceDiagnostics.clear()
+                          Toast.makeText(context, "Cache cleared, reloading", Toast.LENGTH_SHORT).show()
+                          view.reload()
+                      }
                       WorkspaceEffect.OpenDevTools -> webView?.evaluateJavascript(
                           WorkspaceDevTools.LOADER_SCRIPT,
                       ) { result ->
@@ -364,13 +373,19 @@ private fun BrowserWorkspace(
                               diagnostics = "Developer tools did not start: ${result ?: "no response"}"
                           }
                       }
-                      WorkspaceEffect.RunDiagnostics -> webView?.evaluateJavascript(
-                          WorkspaceDiagnostics.PROBE_SCRIPT,
-                      ) { result ->
-                          diagnostics = WorkspaceDiagnostics.report(
-                              probeJson = result,
-                              appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                          )
+                      WorkspaceEffect.RunDiagnostics -> webView?.let { view ->
+                          // The asset probe has to fetch before it can report, and
+                          // evaluateJavascript cannot wait on a promise; start it, then
+                          // read the whole picture back once it has had time to land.
+                          view.evaluateJavascript(WorkspaceDiagnostics.ASSET_PROBE_SCRIPT, null)
+                          view.postDelayed({
+                              view.evaluateJavascript(WorkspaceDiagnostics.PROBE_SCRIPT) { result ->
+                                  diagnostics = WorkspaceDiagnostics.report(
+                                      probeJson = result,
+                                      appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                  )
+                              }
+                          }, ASSET_PROBE_TIMEOUT_MS)
                       }
                   }
               },
