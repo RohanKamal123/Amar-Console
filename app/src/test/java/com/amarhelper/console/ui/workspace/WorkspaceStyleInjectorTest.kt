@@ -76,6 +76,31 @@ class WorkspaceStyleInjectorTest {
     }
 
     @Test
+    fun `the stylesheet never overrides structure on the page's layout containers`() {
+        // The page hangs its height off a percentage chain: root-layout's child is
+        // h-[calc(100%-50px)] and app-route is h-full. An earlier version of this
+        // stylesheet forced `display: block` on root-layout, which collapsed that chain
+        // and rendered the whole workspace blank. Colour is safe here; structure is not.
+        val css = context.assets.open("claude_workspace.css").bufferedReader().use { it.readText() }
+        val structural = listOf("display", "height", "position", "flex", "overflow")
+
+        listOf("root-layout", "app-route").forEach { container ->
+            val ruleStart = css.indexOf(container)
+            if (ruleStart < 0) return@forEach
+            val blockStart = css.indexOf('{', ruleStart)
+            val blockEnd = css.indexOf('}', blockStart)
+            val declarations = css.substring(blockStart, blockEnd)
+
+            structural.forEach { property ->
+                assertFalse(
+                    "$container must not set $property — it breaks the page's height chain",
+                    declarations.contains("$property:"),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `the script is cached rather than re-read on every navigation`() {
         val first = WorkspaceStyleInjector.script(context)
         val second = WorkspaceStyleInjector.script(context)
