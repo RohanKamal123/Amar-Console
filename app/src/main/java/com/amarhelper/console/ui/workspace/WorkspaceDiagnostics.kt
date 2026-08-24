@@ -94,9 +94,18 @@ object WorkspaceDiagnostics {
      * HTTP 200 — so a bundle whose content hash no longer exists comes back as HTML with
      * a success status, and every check from outside the page looks fine.
      *
-     * This distinguishes the two cases outright: the content type of each import, plus
-     * the asset paths a freshly fetched document names, next to the ones this document
-     * actually loaded. If they differ, the loaded document came from cache.
+     * Clearing the cache changed nothing, so a stale document is not the explanation.
+     * What remains unread is the served bytes themselves: the console reports the
+     * failures at line 9 of the document, but the earlier probe numbered lines from
+     * `outerHTML`, which is the re-serialised DOM and does not share the raw file's line
+     * count — the doctype and everything before `<html>` are simply not in it. So the
+     * document is fetched and numbered as served, and scanned for the control and
+     * invisible characters that produce exactly "Invalid or unexpected token".
+     *
+     * Stylesheets are fetched alongside the modules. A stylesheet answered with the SPA
+     * catch-all is dropped silently by the parser, and the frontend's `h-full` chain
+     * collapses to zero height without a single error — which is what a `root-layout`
+     * measuring 381x0 looks like.
      *
      * Asynchronous by necessity — `evaluateJavascript` cannot wait on a promise — so the
      * result is parked on `window.__claudeAssetProbe` and read back by [PROBE_SCRIPT].
@@ -121,7 +130,9 @@ object WorkspaceDiagnostics {
             var found;
             while ((found = specifier.exec(text)) !== null) add(found[1]);
           }
-          var tags = document.querySelectorAll('script[src], link[rel="modulepreload"][href]');
+          var tags = document.querySelectorAll(
+            'script[src], link[rel="modulepreload"][href], link[rel="stylesheet"][href]'
+          );
           for (var j = 0; j < tags.length; j++) {
             add(tags[j].getAttribute("src") || tags[j].getAttribute("href"));
           }
@@ -155,7 +166,43 @@ object WorkspaceDiagnostics {
               while ((hit = asset.exec(html)) !== null && references.length < 6) {
                 if (references.indexOf(hit[1]) < 0) references.push(hit[1]);
               }
-              results.push({ url: "(server's current document)", references: references });
+              // Numbered as served. The console's line 9 means line 9 of this, which
+              // outerHTML cannot show: it starts at <html>, dropping the doctype.
+              var lines = html.split("\n");
+              var served = [];
+              for (var n = 0; n < lines.length && n < 14; n++) {
+                served.push((n + 1) + " [" + lines[n].length + "] " + lines[n].slice(0, 110));
+              }
+
+              // "Invalid or unexpected token" is what a stray character produces. This
+              // finds one by code point rather than guessing which one it might be:
+              // control characters, the invisible general-punctuation block (U+2028 and
+              // U+2029 among them), a byte-order mark, a non-breaking space. Emoji are
+              // legitimately present and are not flagged.
+              function suspicious(code) {
+                if (code < 32 && code !== 9 && code !== 10 && code !== 13) return true;
+                if (code >= 0x2000 && code <= 0x206F) return true;
+                return code === 0xFEFF || code === 0x00A0;
+              }
+              var odd = [];
+              var line = 1;
+              var column = 1;
+              for (var p = 0; p < html.length && odd.length < 12; p++) {
+                var code = html.charCodeAt(p);
+                if (code === 10) { line++; column = 1; continue; }
+                if (suspicious(code)) {
+                  odd.push({ line: line, column: column, code: "U+" + code.toString(16).toUpperCase() });
+                }
+                column++;
+              }
+
+              results.push({
+                url: "(server's current document)",
+                bytes: html.length,
+                references: references,
+                lines: served,
+                odd: odd.length > 0 ? odd : "none"
+              });
             })
             .catch(function (error) {
               results.push({ url: "(server's current document)", status: String(error) });
@@ -194,9 +241,40 @@ object WorkspaceDiagnostics {
               head: text.slice(0, 90).replace(/\s+/g, " ")
             });
           }
+          // root-layout exists and measures 381x0: the markup arrived and something
+          // flattened it. A stylesheet the parser dropped does exactly that to the
+          // frontend's h-full chain, and leaves no error behind to find.
+          var sheets = [];
+          for (var s = 0; s < document.styleSheets.length; s++) {
+            var sheet = document.styleSheets[s];
+            var rules;
+            try {
+              rules = sheet.cssRules ? sheet.cssRules.length : 0;
+            } catch (blocked) {
+              rules = "unreadable";
+            }
+            sheets.push({
+              href: (sheet.href || "(inline)").replace(location.origin, ""),
+              rules: rules
+            });
+          }
+          function heightOf(node) {
+            if (!node) return "absent";
+            var style = getComputedStyle(node);
+            return style.height + " " + style.display + " overflow:" + style.overflowY;
+          }
+
           var body = document.body;
           return JSON.stringify({
             engine: engine,
+            charset: document.characterSet,
+            contentType: document.contentType,
+            styleSheets: sheets,
+            computed: {
+              html: heightOf(document.documentElement),
+              body: heightOf(body),
+              rootLayout: heightOf(document.querySelector('[data-testid="root-layout"]'))
+            },
             url: location.pathname,
             title: document.title,
             readyState: document.readyState,
@@ -210,12 +288,7 @@ object WorkspaceDiagnostics {
             styleTag: !!document.getElementById("claude-workspace-style"),
             inlineScripts: inline,
             assets: window.__claudeAssetProbe || "not run",
-            errors: window.__claudeErrors || "listener missing",
-            // The failures report line 9 of something unnamed; this is what the served
-            // document actually has there.
-            documentLines: (document.documentElement.outerHTML || "")
-              .split("\n").slice(5, 12)
-              .map(function (line, offset) { return (offset + 6) + ": " + line.slice(0, 120); })
+            errors: window.__claudeErrors || "listener missing"
           });
         })();
     """

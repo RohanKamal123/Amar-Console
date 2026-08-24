@@ -22,6 +22,9 @@ class WorkspaceDiagnosticsTest {
             // A syntax error in an inline script reports no filename, so the probe has
             // to read the scripts back out, and name the engine that rejected them.
             "engine", "inlineScripts", "hasLineSeparator",
+            // root-layout present but 381x0 is a collapse, not a boot failure, and a
+            // stylesheet the parser dropped causes one without logging anything.
+            "styleSheets", "cssRules", "computed", "characterSet",
         ).forEach {
             assertTrue("probe should report $it", script.contains(it))
         }
@@ -34,12 +37,20 @@ class WorkspaceDiagnosticsTest {
         // OpenHands answers a missing bundle with index.html at HTTP 200, so the status
         // alone proves nothing; the content type and the first bytes are what separate a
         // real module from the SPA catch-all.
-        listOf("content-type", "cache", "no-store", "script[type=\"module\"]", "modulepreload").forEach {
+        listOf(
+            "content-type", "cache", "no-store", "script[type=\"module\"]", "modulepreload",
+            // A stylesheet answered with the catch-all is dropped without an error.
+            "stylesheet",
+        ).forEach {
             assertTrue("asset probe should use $it", script.contains(it))
         }
-        // And what the server says the document should reference right now — the
-        // comparison that shows whether the loaded document came from cache.
+        // The console numbers its failures against the served bytes, so the probe has to
+        // report those, not the re-serialised DOM — and name any character that would
+        // produce "Invalid or unexpected token" rather than guessing at one.
         assertTrue(script.contains("references"))
+        assertTrue(script.contains("0x2000"))
+        assertTrue(script.contains("0xFEFF"))
+        assertTrue(script.contains("suspicious"))
         assertTrue(WorkspaceDiagnostics.PROBE_SCRIPT.contains("__claudeAssetProbe"))
     }
 
