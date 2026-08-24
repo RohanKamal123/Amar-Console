@@ -49,6 +49,12 @@ data class AppConfig(
      * desktop interface and cannot be styled.
      */
     val claudeStyleWorkspaces: Boolean = true,
+    /**
+     * Render workspaces in the app rather than the system browser. Kept separate from
+     * [claudeStyleWorkspaces] so a rendering problem can be told apart from a styling
+     * one: in-app with styling off is the control case.
+     */
+    val openWorkspacesInApp: Boolean = true,
     val verboseNetworkLogging: Boolean = false,
 ) {
     fun urlFor(service: ServiceId): String = when (service) {

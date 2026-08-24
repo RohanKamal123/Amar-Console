@@ -167,6 +167,25 @@ fun SettingsScreen(
                 }
             }
 
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Open workspaces in the app", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Off sends OpenHands and OpenCode to Chrome instead. Turning " +
+                                "this on with styling off is the way to tell a rendering problem " +
+                                "apart from a styling one.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.config.openWorkspacesInApp,
+                        onCheckedChange = viewModel::setOpenWorkspacesInApp,
+                    )
+                }
+            }
+
             item { SectionHeader("Polling") }
             item {
                 PollIntervalRow(

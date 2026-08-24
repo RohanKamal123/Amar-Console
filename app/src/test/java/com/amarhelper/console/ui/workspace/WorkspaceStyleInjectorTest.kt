@@ -1,8 +1,11 @@
 package com.amarhelper.console.ui.workspace
 
 import androidx.test.core.app.ApplicationProvider
+import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +26,37 @@ class WorkspaceStyleInjectorTest {
         assertFalse(script!!.contains("__CLAUDE_CSS__"))
         assertTrue(script.contains("claude-workspace-style"))
         assertTrue(script.contains("data-claude-style"))
+    }
+
+    @Test
+    fun `the generated script parses`() {
+        // The test above passed throughout the bug this covers: the script's own doc
+        // comment named the placeholder, `replace` rewrote both occurrences, and the
+        // stylesheet spliced into the comment closed it early with its own `*/`. No
+        // placeholder was left behind and every selector was present — the script was
+        // simply not JavaScript any more. Only parsing it catches that.
+        val node = sequenceOf("/opt/node22/bin/node", "node")
+            .firstOrNull { runCatching { ProcessBuilder(it, "--version").start().waitFor() == 0 }.getOrDefault(false) }
+        org.junit.Assume.assumeNotNull(node)
+
+        val file = File.createTempFile("claude_workspace", ".js")
+            .apply { deleteOnExit(); writeText(WorkspaceStyleInjector.script(context)!!) }
+        val process = ProcessBuilder(node, "--check", file.absolutePath).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText().take(600)
+
+        assertEquals("the injected script should parse:\n$output", 0, process.waitFor())
+    }
+
+    @Test
+    fun `a stray second placeholder is refused rather than emitted as a broken script`() {
+        val js = "// mentions __CLAUDE_CSS__ in prose\nvar css = __CLAUDE_CSS__;"
+
+        // Failing loudly here is what makes the caller fall back to an unstyled page
+        // instead of injecting something that cannot parse.
+        assertThrows(IllegalArgumentException::class.java) {
+            WorkspaceStyleInjector.substitute(js, "body { color: red }")
+        }
+        assertTrue(WorkspaceStyleInjector.substitute("var css = __CLAUDE_CSS__;", "a{}").contains("a{}"))
     }
 
     @Test

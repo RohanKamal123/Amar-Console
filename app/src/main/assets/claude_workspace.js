@@ -6,7 +6,11 @@
  * whenever the document changes, and is idempotent — repeated calls are cheap and do not
  * stack up style tags or observers.
  *
- * The Kotlin side substitutes __CLAUDE_CSS__ with the stylesheet before evaluating this.
+ * The Kotlin side substitutes the placeholder below with the stylesheet, as a quoted
+ * JavaScript string literal, before evaluating this. Do not write that placeholder
+ * anywhere else in this file — not even in a comment. The substitution is textual, the
+ * stylesheet contains the sequence that ends a block comment, and a second occurrence
+ * would splice it into prose and break the whole script.
  */
 (function () {
   var STYLE_ID = "claude-workspace-style";

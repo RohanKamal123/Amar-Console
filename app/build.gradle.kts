@@ -1,3 +1,20 @@
+/**
+ * The short commit the build came from. Every debug APK previously reported the same
+ * "0.1.0-debug (1)", which made it impossible to tell a fresh install from a stale one
+ * when diagnosing a problem on a device.
+ */
+fun gitSha(): String = try {
+    ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .redirectErrorStream(true)
+        .start()
+        .inputStream.bufferedReader()
+        .readText()
+        .trim()
+        .ifEmpty { "unknown" }
+} catch (e: Exception) {
+    "unknown"
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -23,7 +40,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+            versionNameSuffix = "-debug+${gitSha()}"
             // Verbose HTTP logging is compiled in for debug builds only.
             buildConfigField("boolean", "VERBOSE_LOGGING", "true")
         }

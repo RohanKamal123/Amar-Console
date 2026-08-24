@@ -79,6 +79,26 @@ class WorkspaceCommandTest {
     }
 
     @Test
+    fun `clearing the cache is reachable without a conversation`() {
+        val parsed = WorkspaceCommand.parse("/clearcache")!!
+
+        assertEquals(WorkspaceCommand.CLEARCACHE, parsed.command)
+        assertTrue(!parsed.command.needsConversation)
+        assertEquals(
+            listOf(WorkspaceCommand.CHROME, WorkspaceCommand.CLEARCACHE),
+            WorkspaceCommand.matching("/c"),
+        )
+    }
+
+    @Test
+    fun `the control that injects nothing is its own command`() {
+        // Turning off Claude styling only stops the stylesheet — the error listener still
+        // runs — so it never was a test of "no app code in the page".
+        assertEquals(WorkspaceCommand.PLAIN, WorkspaceCommand.parse("/plain")!!.command)
+        assertTrue(!WorkspaceCommand.PLAIN.needsConversation)
+    }
+
+    @Test
     fun `only commands needing a conversation are marked as such`() {
         assertTrue(WorkspaceCommand.STOP.needsConversation)
         assertTrue(!WorkspaceCommand.NEW.needsConversation)

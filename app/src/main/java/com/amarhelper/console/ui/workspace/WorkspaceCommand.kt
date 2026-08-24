@@ -20,6 +20,10 @@ enum class WorkspaceCommand(
     SETTINGS("/settings", "Open the OpenHands settings page"),
     RELOAD("/reload", "Reload the page"),
     CHROME("/chrome", "Open the current page in Chrome"),
+    CLEARCACHE("/clearcache", "Drop the cached page and reload it"),
+    PLAIN("/plain", "Reload with no app scripts injected at all"),
+    DEVTOOLS("/devtools", "Open developer tools inside the page"),
+    DIAG("/diag", "Report what the page says about itself"),
     HELP("/help", "Show these commands");
 
     companion object {
@@ -51,6 +55,36 @@ enum class WorkspaceCommand(
 
 /** What the bar asks the hosting WebView to do. */
 sealed interface WorkspaceEffect {
+    /** Measure the page from the inside and show the result. */
+    data object RunDiagnostics : WorkspaceEffect
+
+    /** Start on-device developer tools inside the page. */
+    data object OpenDevTools : WorkspaceEffect
+
+    /**
+     * Empties the WebView's HTTP cache, then reloads.
+     *
+     * The OpenHands frontend is a Vite build: `index.html` names its bundles by content
+     * hash, so a cached copy of that document from an earlier deploy points at asset
+     * paths the server no longer has. The server answers those with its SPA catch-all —
+     * `index.html`, HTTP 200, `text/html` — and a `<script type="module">` importing HTML
+     * dies with a syntax error before anything renders. Clearing the cache is the only
+     * lever this side of the connection has over that.
+     */
+    data object ClearCache : WorkspaceEffect
+
+    /**
+     * Reloads with every app-side injection switched off, as a control.
+     *
+     * Turning off Claude styling only stops the stylesheet; the error listener still
+     * runs at `onPageStarted`, so "styling off, still blank" never established that the
+     * page fails without this app's code in it. One of those injections already turned
+     * out to be the source of errors read as the page's own. This separates the two
+     * for good: if the page renders after `/plain`, the app is the cause; if it stays
+     * blank, nothing this app injects is involved.
+     */
+    data object ReloadWithoutScripts : WorkspaceEffect
+
     data class Navigate(val url: String) : WorkspaceEffect
     data object Reload : WorkspaceEffect
     data class OpenExternally(val url: String) : WorkspaceEffect

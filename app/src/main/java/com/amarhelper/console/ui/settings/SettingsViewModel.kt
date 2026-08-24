@@ -200,6 +200,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { configStore.setClaudeStyleWorkspaces(enabled) }
     }
 
+    fun setOpenWorkspacesInApp(enabled: Boolean) {
+        viewModelScope.launch { configStore.setOpenWorkspacesInApp(enabled) }
+    }
+
     fun setVerboseLogging(enabled: Boolean) {
         viewModelScope.launch { configStore.setVerboseNetworkLogging(enabled) }
     }

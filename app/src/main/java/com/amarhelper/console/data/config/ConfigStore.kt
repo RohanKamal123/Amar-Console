@@ -37,6 +37,7 @@ class ConfigStore @Inject constructor(
         val LITELLM_HEALTH_PATH = stringPreferencesKey("litellm_health_path")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val CLAUDE_STYLE_WORKSPACES = booleanPreferencesKey("claude_style_workspaces")
+        val OPEN_WORKSPACES_IN_APP = booleanPreferencesKey("open_workspaces_in_app")
         val VERBOSE_LOGGING = booleanPreferencesKey("verbose_network_logging")
     }
 
@@ -61,6 +62,7 @@ class ConfigStore @Inject constructor(
                     ?: ThemeMode.SYSTEM,
                 verboseNetworkLogging = prefs[Keys.VERBOSE_LOGGING] ?: false,
                 claudeStyleWorkspaces = prefs[Keys.CLAUDE_STYLE_WORKSPACES] ?: true,
+                openWorkspacesInApp = prefs[Keys.OPEN_WORKSPACES_IN_APP] ?: true,
             )
         }
 
@@ -97,6 +99,10 @@ class ConfigStore @Inject constructor(
 
     suspend fun setClaudeStyleWorkspaces(enabled: Boolean) {
         context.configDataStore.edit { it[Keys.CLAUDE_STYLE_WORKSPACES] = enabled }
+    }
+
+    suspend fun setOpenWorkspacesInApp(enabled: Boolean) {
+        context.configDataStore.edit { it[Keys.OPEN_WORKSPACES_IN_APP] = enabled }
     }
 
     suspend fun setVerboseNetworkLogging(enabled: Boolean) {
