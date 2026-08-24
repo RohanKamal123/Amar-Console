@@ -29,6 +29,11 @@ class WorkspaceDiagnosticsTest {
             // the root. Top-level rule counts cannot show whether the rule that sets it
             // survived, because a Tailwind build nests almost everything.
             "heightRules", "imports",
+            // root-layout asks for height:100vh yet measures 0, while the fixed-position
+            // toast layer fills the viewport. Measure 100vh and the .h-screen class with
+            // throwaway nodes, and read the rule verbatim, to tell a WebView vh fault from
+            // a missing page-CSS rule instead of guessing between them.
+            "hScreenRule", "vh100", "hScreenClass", "clientHeight",
             // Hydration compares server markup against the client's first render, so the
             // inputs that differ between this WebView and Chrome are what matter now.
             "environment", "languages", "prefers-color-scheme", "cookieEnabled",

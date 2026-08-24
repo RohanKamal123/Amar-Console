@@ -273,6 +273,11 @@ object WorkspaceDiagnostics {
           // walk goes all the way down and reports the matching rules verbatim.
           var heightRules = [];
           var imports = [];
+          // root-layout carries the class `h-screen` (height:100vh). If that rule is
+          // absent or overridden in the served CSS, the container has no height of its
+          // own and collapses — which is a page-CSS fault. So capture the rule verbatim
+          // rather than infer its presence from a count.
+          var hScreenRule = null;
           function walk(rules, counter) {
             for (var r = 0; r < rules.length; r++) {
               var rule = rules[r];
@@ -290,6 +295,9 @@ object WorkspaceDiagnostics {
                 heightRules.length < 10
               ) {
                 heightRules.push(rule.cssText.slice(0, 140).replace(/\s+/g, " "));
+              }
+              if (hScreenRule === null && /\.h-screen\b/.test(selector)) {
+                hScreenRule = rule.cssText.slice(0, 140).replace(/\s+/g, " ");
               }
               if (rule.cssRules && rule.cssRules.length) walk(rule.cssRules, counter);
             }
@@ -347,6 +355,34 @@ object WorkspaceDiagnostics {
 
           var body = document.body;
 
+          // The contradiction to resolve: the fixed-position toast layer measures a
+          // full-viewport height, so the containing block is ~566 tall — yet root-layout,
+          // which asks for height:100vh, computes to 0. Either 100vh resolves to 0 for
+          // in-flow elements in this WebView (a WebView fault), or the .h-screen rule
+          // never applies and the container is really height:auto collapsing to nothing
+          // (a page-CSS fault). Measure both directly with throwaway nodes rather than
+          // reason about which: a bare inline height:100vh, and the class the container
+          // actually uses. clientHeight is the layout viewport that 100vh resolves against.
+          function measuredHeight(apply) {
+            if (!body) return "no body";
+            var probe = document.createElement("div");
+            probe.style.cssText = "position:absolute;top:0;left:0;width:1px;visibility:hidden;";
+            apply(probe);
+            body.appendChild(probe);
+            var height = probe.offsetHeight;
+            body.removeChild(probe);
+            return height;
+          }
+          var rootLayoutNode = document.querySelector('[data-testid="root-layout"]');
+          var layout = {
+            innerHeight: window.innerHeight,
+            clientHeight: document.documentElement.clientHeight,
+            visualViewport: window.visualViewport ? Math.round(window.visualViewport.height) : "n/a",
+            vh100: measuredHeight(function (node) { node.style.height = "100vh"; }),
+            hScreenClass: measuredHeight(function (node) { node.className = "h-screen"; }),
+            rootInlineHeight: rootLayoutNode ? (rootLayoutNode.style.height || "(none)") : "absent"
+          };
+
           // 13 children measuring nothing, and no idea what any of them are. This is the
           // difference between "the app rendered a shell that hydration then emptied"
           // and "the server sent a shell the client never filled in" — which decides
@@ -378,6 +414,8 @@ object WorkspaceDiagnostics {
             contentType: document.contentType,
             styleSheets: sheets,
             heightRules: heightRules.length > 0 ? heightRules : "none applied",
+            hScreenRule: hScreenRule || "absent",
+            layout: layout,
             imports: imports.length > 0 ? imports : "none",
             computed: {
               html: heightOf(document.documentElement),
