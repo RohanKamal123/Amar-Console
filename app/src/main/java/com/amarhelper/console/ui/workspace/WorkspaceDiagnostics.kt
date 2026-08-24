@@ -159,6 +159,24 @@ object WorkspaceDiagnostics {
           var jobs = [];
           for (var k = 0; k < urls.length && k < 6; k++) jobs.push(describe(urls[k]));
 
+          // The frontend reads this before it can render anything. Assets loading says
+          // nothing about it: it is a different path, with cookies and credentials.
+          jobs.push(fetch("/api/options/config", { cache: "no-store", credentials: "include" })
+            .then(function (response) {
+              return response.text().then(function (payload) {
+                results.push({
+                  url: "/api/options/config",
+                  status: response.status,
+                  type: response.headers.get("content-type") || "(none)",
+                  bytes: payload.length,
+                  head: payload.slice(0, 80).replace(/\s+/g, " ")
+                });
+              });
+            })
+            .catch(function (error) {
+              results.push({ url: "/api/options/config", status: "failed", type: String(error) });
+            }));
+
           // What the server says the document should reference right now.
           jobs.push(fetch(location.href, { cache: "no-store" })
             .then(function (response) { return response.text(); })
@@ -328,6 +346,31 @@ object WorkspaceDiagnostics {
           };
 
           var body = document.body;
+
+          // 13 children measuring nothing, and no idea what any of them are. This is the
+          // difference between "the app rendered a shell that hydration then emptied"
+          // and "the server sent a shell the client never filled in" — which decides
+          // where to look next, and cannot be read from a count.
+          var outline = [];
+          var children = body ? body.children : [];
+          for (var c = 0; c < children.length && c < 16; c++) {
+            var child = children[c];
+            var childRect = child.getBoundingClientRect();
+            // SVG elements carry an SVGAnimatedString here, not a string.
+            var className = child.className && child.className.toString
+              ? child.className.toString()
+              : "";
+            outline.push({
+              tag: child.tagName.toLowerCase(),
+              testId: child.getAttribute("data-testid") || "",
+              id: child.id || "",
+              cls: className.slice(0, 40),
+              kids: child.childElementCount,
+              box: Math.round(childRect.width) + "x" + Math.round(childRect.height),
+              text: (child.textContent || "").trim().slice(0, 40).replace(/\s+/g, " ")
+            });
+          }
+
           return JSON.stringify({
             engine: engine,
             environment: environment,
@@ -347,6 +390,7 @@ object WorkspaceDiagnostics {
             viewport: window.innerWidth + "x" + window.innerHeight,
             bodyScroll: body ? body.scrollWidth + "x" + body.scrollHeight : "no body",
             bodyChildren: body ? body.children.length : 0,
+            bodyOutline: outline,
             rootLayout: box('[data-testid="root-layout"]'),
             appRoute: box('[data-testid="app-route"]'),
             chatInput: box('[data-testid="chat-input"]'),

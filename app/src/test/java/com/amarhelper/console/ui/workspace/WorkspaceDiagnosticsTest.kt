@@ -32,6 +32,9 @@ class WorkspaceDiagnosticsTest {
             // Hydration compares server markup against the client's first render, so the
             // inputs that differ between this WebView and Chrome are what matter now.
             "environment", "languages", "prefers-color-scheme", "cookieEnabled",
+            // A count of body children cannot say whether the shell was rendered and
+            // then emptied, or never filled in.
+            "bodyOutline", "childElementCount",
         ).forEach {
             assertTrue("probe should report $it", script.contains(it))
         }
@@ -55,6 +58,10 @@ class WorkspaceDiagnosticsTest {
         // report those, not the re-serialised DOM — and name any character that would
         // produce "Invalid or unexpected token" rather than guessing at one.
         assertTrue(script.contains("references"))
+        // The frontend cannot render without this, and it is a different path from the
+        // static assets — cookies, credentials, a different handler.
+        assertTrue(script.contains("/api/options/config"))
+        assertTrue(script.contains("credentials"))
         assertTrue(script.contains("0x2000"))
         assertTrue(script.contains("0xFEFF"))
         assertTrue(script.contains("suspicious"))
