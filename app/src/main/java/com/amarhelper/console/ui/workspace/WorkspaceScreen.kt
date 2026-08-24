@@ -272,6 +272,13 @@ private fun BrowserWorkspace(
                             }
                         }
 
+                        override fun shouldInterceptRequest(
+                            view: WebView?, request: WebResourceRequest?,
+                        ): WebResourceResponse? = WorkspaceDevTools.interceptOrNull(
+                            context = viewContext,
+                            url = request?.url?.toString(),
+                        ) ?: super.shouldInterceptRequest(view, request)
+
                         override fun onPageStarted(
                             view: WebView?, startedUrl: String?, favicon: android.graphics.Bitmap?,
                         ) {
@@ -350,6 +357,13 @@ private fun BrowserWorkspace(
                       WorkspaceEffect.Reload -> webView?.reload()
                       is WorkspaceEffect.OpenExternally ->
                           openExternally(context, Uri.parse(effect.url))
+                      WorkspaceEffect.OpenDevTools -> webView?.evaluateJavascript(
+                          WorkspaceDevTools.LOADER_SCRIPT,
+                      ) { result ->
+                          if (result?.contains("loading") != true && result?.contains("already") != true) {
+                              diagnostics = "Developer tools did not start: ${result ?: "no response"}"
+                          }
+                      }
                       WorkspaceEffect.RunDiagnostics -> webView?.evaluateJavascript(
                           WorkspaceDiagnostics.PROBE_SCRIPT,
                       ) { result ->

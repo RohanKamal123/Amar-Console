@@ -169,6 +169,8 @@ class WorkspaceCommandViewModel @Inject constructor(
                     effects.send(WorkspaceEffect.OpenExternally(target))
                 }
 
+                WorkspaceCommand.DEVTOOLS -> effects.send(WorkspaceEffect.OpenDevTools)
+
                 WorkspaceCommand.DIAG -> effects.send(WorkspaceEffect.RunDiagnostics)
 
                 WorkspaceCommand.HELP -> _state.update {

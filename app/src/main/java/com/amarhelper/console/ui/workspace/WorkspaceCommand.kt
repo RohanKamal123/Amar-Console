@@ -20,6 +20,7 @@ enum class WorkspaceCommand(
     SETTINGS("/settings", "Open the OpenHands settings page"),
     RELOAD("/reload", "Reload the page"),
     CHROME("/chrome", "Open the current page in Chrome"),
+    DEVTOOLS("/devtools", "Open developer tools inside the page"),
     DIAG("/diag", "Report what the page says about itself"),
     HELP("/help", "Show these commands");
 
@@ -54,6 +55,9 @@ enum class WorkspaceCommand(
 sealed interface WorkspaceEffect {
     /** Measure the page from the inside and show the result. */
     data object RunDiagnostics : WorkspaceEffect
+
+    /** Start on-device developer tools inside the page. */
+    data object OpenDevTools : WorkspaceEffect
 
     data class Navigate(val url: String) : WorkspaceEffect
     data object Reload : WorkspaceEffect
