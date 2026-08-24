@@ -70,8 +70,28 @@ object WorkspaceDiagnostics {
             var rect = element.getBoundingClientRect();
             return Math.round(rect.width) + "x" + Math.round(rect.height);
           }
+          // The engine version decides whether a modern bundle can even be parsed.
+          var engine = "unknown";
+          var match = navigator.userAgent.match(/Chrome\/(\d+)/);
+          if (match) engine = "Chrome " + match[1];
+
+          // An inline script that fails to parse leaves no filename in the console,
+          // so the only way to see what broke is to read the scripts back out.
+          var inline = [];
+          var scripts = document.querySelectorAll("script:not([src])");
+          for (var i = 0; i < scripts.length; i++) {
+            var text = scripts[i].textContent || "";
+            inline.push({
+              index: i,
+              length: text.length,
+              // Characters that older engines reject inside a string literal.
+              hasLineSeparator: /[\u2028\u2029]/.test(text),
+              head: text.slice(0, 90).replace(/\s+/g, " ")
+            });
+          }
           var body = document.body;
           return JSON.stringify({
+            engine: engine,
             url: location.pathname,
             title: document.title,
             readyState: document.readyState,
@@ -82,7 +102,8 @@ object WorkspaceDiagnostics {
             appRoute: box('[data-testid="app-route"]'),
             chatInput: box('[data-testid="chat-input"]'),
             styled: document.documentElement.hasAttribute("data-claude-style"),
-            styleTag: !!document.getElementById("claude-workspace-style")
+            styleTag: !!document.getElementById("claude-workspace-style"),
+            inlineScripts: inline
           });
         })();
     """

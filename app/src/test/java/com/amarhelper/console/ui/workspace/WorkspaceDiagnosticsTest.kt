@@ -16,7 +16,12 @@ class WorkspaceDiagnosticsTest {
 
         // Zero-height containers mean the styling collapsed the page; an absent
         // root-layout with an empty body means the app never booted at all.
-        listOf("root-layout", "app-route", "bodyChildren", "readyState", "styled").forEach {
+        listOf(
+            "root-layout", "app-route", "bodyChildren", "readyState", "styled",
+            // A syntax error in an inline script reports no filename, so the probe has
+            // to read the scripts back out, and name the engine that rejected them.
+            "engine", "inlineScripts", "hasLineSeparator",
+        ).forEach {
             assertTrue("probe should report $it", script.contains(it))
         }
     }
