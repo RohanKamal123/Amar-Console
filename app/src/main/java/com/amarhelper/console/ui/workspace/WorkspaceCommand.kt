@@ -21,6 +21,7 @@ enum class WorkspaceCommand(
     RELOAD("/reload", "Reload the page"),
     CHROME("/chrome", "Open the current page in Chrome"),
     CLEARCACHE("/clearcache", "Drop the cached page and reload it"),
+    PLAIN("/plain", "Reload with no app scripts injected at all"),
     DEVTOOLS("/devtools", "Open developer tools inside the page"),
     DIAG("/diag", "Report what the page says about itself"),
     HELP("/help", "Show these commands");
@@ -71,6 +72,18 @@ sealed interface WorkspaceEffect {
      * lever this side of the connection has over that.
      */
     data object ClearCache : WorkspaceEffect
+
+    /**
+     * Reloads with every app-side injection switched off, as a control.
+     *
+     * Turning off Claude styling only stops the stylesheet; the error listener still
+     * runs at `onPageStarted`, so "styling off, still blank" never established that the
+     * page fails without this app's code in it. One of those injections already turned
+     * out to be the source of errors read as the page's own. This separates the two
+     * for good: if the page renders after `/plain`, the app is the cause; if it stays
+     * blank, nothing this app injects is involved.
+     */
+    data object ReloadWithoutScripts : WorkspaceEffect
 
     data class Navigate(val url: String) : WorkspaceEffect
     data object Reload : WorkspaceEffect

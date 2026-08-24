@@ -188,6 +188,9 @@ private fun BrowserWorkspace(
     var currentUrl by remember { mutableStateOf(url) }
     var diagnostics by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableFloatStateOf(0f) }
+    // Held as a State rather than a plain value: the WebViewClient is built once in
+    // factory and reads this from its closure on every navigation.
+    val injectScripts = remember { mutableStateOf(true) }
     var fileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         fileCallback?.onReceiveValue(uri?.let { arrayOf(it) })
@@ -287,15 +290,21 @@ private fun BrowserWorkspace(
                         ) {
                             super.onPageStarted(view, startedUrl, favicon)
                             // Ahead of the page's own scripts, so load-time failures are
-                            // captured with the source the console leaves out.
-                            view?.evaluateJavascript(WorkspaceDiagnostics.ERROR_LISTENER_SCRIPT, null)
+                            // captured with the source the console leaves out. Skipped
+                            // after /plain, which is the control for "does this page fail
+                            // without any of this app's code in it".
+                            if (injectScripts.value) {
+                                view?.evaluateJavascript(WorkspaceDiagnostics.ERROR_LISTENER_SCRIPT, null)
+                            }
                         }
 
                         override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                             super.onPageFinished(view, finishedUrl)
                             finishedUrl?.let { currentUrl = it }
                             progress = 1f
-                            if (applyStyling) view?.let { WorkspaceStyleInjector.apply(it) }
+                            if (applyStyling && injectScripts.value) {
+                                view?.let { WorkspaceStyleInjector.apply(it) }
+                            }
                         }
 
                         override fun doUpdateVisitedHistory(
@@ -305,7 +314,9 @@ private fun BrowserWorkspace(
                             historyUrl?.let { currentUrl = it }
                             // The frontend is a single-page app: route changes do not
                             // trigger onPageFinished, so re-assert the styling here too.
-                            if (applyStyling) view?.let { WorkspaceStyleInjector.apply(it) }
+                            if (applyStyling && injectScripts.value) {
+                                view?.let { WorkspaceStyleInjector.apply(it) }
+                            }
                         }
 
                         override fun onReceivedHttpError(
@@ -360,6 +371,16 @@ private fun BrowserWorkspace(
                       WorkspaceEffect.Reload -> webView?.reload()
                       is WorkspaceEffect.OpenExternally ->
                           openExternally(context, Uri.parse(effect.url))
+                      WorkspaceEffect.ReloadWithoutScripts -> webView?.let { view ->
+                          injectScripts.value = false
+                          WorkspaceDiagnostics.clear()
+                          Toast.makeText(
+                              context,
+                              "Reloading with no app scripts injected",
+                              Toast.LENGTH_SHORT,
+                          ).show()
+                          view.reload()
+                      }
                       WorkspaceEffect.ClearCache -> webView?.let { view ->
                           view.clearCache(true)
                           WorkspaceDiagnostics.clear()
@@ -383,6 +404,7 @@ private fun BrowserWorkspace(
                                   diagnostics = WorkspaceDiagnostics.report(
                                       probeJson = result,
                                       appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                      injecting = injectScripts.value,
                                   )
                               }
                           }, ASSET_PROBE_TIMEOUT_MS)

@@ -29,6 +29,9 @@ class WorkspaceDiagnosticsTest {
             // the root. Top-level rule counts cannot show whether the rule that sets it
             // survived, because a Tailwind build nests almost everything.
             "heightRules", "imports",
+            // Hydration compares server markup against the client's first render, so the
+            // inputs that differ between this WebView and Chrome are what matter now.
+            "environment", "languages", "prefers-color-scheme", "cookieEnabled",
         ).forEach {
             assertTrue("probe should report $it", script.contains(it))
         }
@@ -87,6 +90,16 @@ class WorkspaceDiagnosticsTest {
 
         assertTrue(report.contains("0.1.0 (1)"))
         assertTrue(report.contains("\"url\":\"/\""))
+    }
+
+    @Test
+    fun `a report from the no-injection control says so`() {
+        // Otherwise an empty error list reads as "nothing went wrong" when it actually
+        // means the listener that would have caught it was never installed.
+        val report = WorkspaceDiagnostics.report("{}", appVersion = "x", injecting = false)
+
+        assertTrue(report.contains("/plain"))
+        assertTrue(!WorkspaceDiagnostics.report("{}", appVersion = "x").contains("/plain"))
     }
 
     @Test

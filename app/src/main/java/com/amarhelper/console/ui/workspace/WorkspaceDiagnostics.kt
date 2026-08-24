@@ -300,9 +300,37 @@ object WorkspaceDiagnostics {
             return style.height + " " + style.display + " overflow:" + style.overflowY;
           }
 
+          // Hydration compares what the server rendered against what the client renders
+          // first. These are the inputs that can differ between this WebView and Chrome
+          // on the same device — the browser's language list drives i18next, the colour
+          // scheme drives themed markup, and blocked storage changes what the app reads
+          // before its first paint. A difference here is a reason for a mismatch; the
+          // absence of one rules the whole class out.
+          function attempt(work) {
+            try { return work(); } catch (error) { return String(error).slice(0, 60); }
+          }
+          var environment = {
+            language: navigator.language,
+            languages: (navigator.languages || []).join(","),
+            colorScheme: attempt(function () {
+              return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+            }),
+            timeZone: attempt(function () { return Intl.DateTimeFormat().resolvedOptions().timeZone; }),
+            cookies: navigator.cookieEnabled,
+            storage: attempt(function () {
+              localStorage.setItem("__claude_probe", "1");
+              localStorage.removeItem("__claude_probe");
+              return "ok";
+            }),
+            lang: document.documentElement.getAttribute("lang"),
+            dir: document.documentElement.getAttribute("dir"),
+            rootClass: (document.documentElement.className || "(none)").slice(0, 80)
+          };
+
           var body = document.body;
           return JSON.stringify({
             engine: engine,
+            environment: environment,
             charset: document.characterSet,
             contentType: document.contentType,
             styleSheets: sheets,
@@ -332,10 +360,13 @@ object WorkspaceDiagnostics {
     """
 
     /** Formats a probe result and the console log into something readable on a phone. */
-    fun report(probeJson: String?, appVersion: String): String {
+    fun report(probeJson: String?, appVersion: String, injecting: Boolean = true): String {
         val console = problems().ifEmpty { recent() }
         return buildString {
             append("build: ").append(appVersion).append('\n')
+            // After /plain the error listener is not installed either, so an empty
+            // `errors` list means "not watched", not "nothing went wrong".
+            if (!injecting) append("app scripts: none injected (/plain)\n")
             append("page: ").append(probeJson?.trim('"')?.replace("\\\"", "\"") ?: "no response").append("\n\n")
             if (console.isEmpty()) {
                 append("console: nothing logged")
