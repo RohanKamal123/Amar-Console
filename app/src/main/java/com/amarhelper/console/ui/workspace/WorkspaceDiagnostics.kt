@@ -145,6 +145,9 @@ object WorkspaceDiagnostics {
                   url: url.replace(location.origin, ""),
                   status: response.status,
                   type: response.headers.get("content-type") || "(none)",
+                  // A stylesheet cut short parses cleanly up to the cut and drops
+                  // everything after it, which no status or content type reveals.
+                  bytes: body.length,
                   head: body.slice(0, 60).replace(/\s+/g, " ")
                 });
               });
@@ -244,18 +247,51 @@ object WorkspaceDiagnostics {
           // root-layout exists and measures 381x0: the markup arrived and something
           // flattened it. A stylesheet the parser dropped does exactly that to the
           // frontend's h-full chain, and leaves no error behind to find.
+          // html computes to 0px while the viewport is 566 tall, so the chain is broken
+          // at the very top. The frontend's h-full percentages need an explicit
+          // html/body height, and the only question left is whether the applied
+          // stylesheet actually carries that rule. Counting top-level rules cannot say:
+          // a Tailwind build nests nearly everything inside @layer and @media, so the
+          // walk goes all the way down and reports the matching rules verbatim.
+          var heightRules = [];
+          var imports = [];
+          function walk(rules, counter) {
+            for (var r = 0; r < rules.length; r++) {
+              var rule = rules[r];
+              counter.deep++;
+              if (rule.href !== undefined && rule.media !== undefined && rule.styleSheet !== undefined) {
+                // An @import that did not resolve leaves styleSheet null. This one
+                // points at a public font host, from a phone on a VPN-only network.
+                imports.push({ href: String(rule.href).slice(0, 70), loaded: !!rule.styleSheet });
+              }
+              var selector = rule.selectorText || "";
+              if (
+                selector &&
+                /(^|,)\s*(html|body|:root)\b/.test(selector) &&
+                /height\s*:/.test(rule.cssText) &&
+                heightRules.length < 10
+              ) {
+                heightRules.push(rule.cssText.slice(0, 140).replace(/\s+/g, " "));
+              }
+              if (rule.cssRules && rule.cssRules.length) walk(rule.cssRules, counter);
+            }
+          }
+
           var sheets = [];
           for (var s = 0; s < document.styleSheets.length; s++) {
             var sheet = document.styleSheets[s];
             var rules;
+            var counter = { deep: 0 };
             try {
               rules = sheet.cssRules ? sheet.cssRules.length : 0;
+              if (sheet.cssRules) walk(sheet.cssRules, counter);
             } catch (blocked) {
               rules = "unreadable";
             }
             sheets.push({
               href: (sheet.href || "(inline)").replace(location.origin, ""),
-              rules: rules
+              rules: rules,
+              deep: counter.deep
             });
           }
           function heightOf(node) {
@@ -270,6 +306,8 @@ object WorkspaceDiagnostics {
             charset: document.characterSet,
             contentType: document.contentType,
             styleSheets: sheets,
+            heightRules: heightRules.length > 0 ? heightRules : "none applied",
+            imports: imports.length > 0 ? imports : "none",
             computed: {
               html: heightOf(document.documentElement),
               body: heightOf(body),

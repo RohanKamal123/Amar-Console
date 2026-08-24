@@ -25,6 +25,10 @@ class WorkspaceDiagnosticsTest {
             // root-layout present but 381x0 is a collapse, not a boot failure, and a
             // stylesheet the parser dropped causes one without logging anything.
             "styleSheets", "cssRules", "computed", "characterSet",
+            // html computes to 0px with a 566px viewport: the height chain is broken at
+            // the root. Top-level rule counts cannot show whether the rule that sets it
+            // survived, because a Tailwind build nests almost everything.
+            "heightRules", "imports",
         ).forEach {
             assertTrue("probe should report $it", script.contains(it))
         }
